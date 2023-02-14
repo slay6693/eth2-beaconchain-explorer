@@ -18,7 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	itypes "github.com/gobitfly/eth-rewards/types"
+	itypes "github.com/prysmaticlabs/prysm/v3/explorer/tracer"
 	"github.com/shopspring/decimal"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -1486,6 +1486,7 @@ func getBurnPageData() (*types.BurnPageData, error) {
 		for _, details := range epochs {
 			// logger.Infof("income: %+v", details)
 			total.AttestationHeadReward += details.AttestationHeadReward
+			total.AttestationHeadPenalty += details.AttestationHeadPenalty
 			total.AttestationSourceReward += details.AttestationSourceReward
 			total.AttestationSourcePenalty += details.AttestationSourcePenalty
 			total.AttestationTargetReward += details.AttestationTargetReward
@@ -1513,6 +1514,7 @@ func getBurnPageData() (*types.BurnPageData, error) {
 	rewards = rewards.Add(decimal.NewFromBigInt(new(big.Int).SetUint64(total.SyncCommitteeReward), 0))
 	rewards = rewards.Add(decimal.NewFromBigInt(new(big.Int).SetUint64(total.SlashingReward), 0))
 
+	rewards = rewards.Sub(decimal.NewFromBigInt(new(big.Int).SetUint64(total.AttestationHeadPenalty), 0))
 	rewards = rewards.Sub(decimal.NewFromBigInt(new(big.Int).SetUint64(total.AttestationTargetPenalty), 0))
 	rewards = rewards.Sub(decimal.NewFromBigInt(new(big.Int).SetUint64(total.FinalityDelayPenalty), 0))
 	rewards = rewards.Sub(decimal.NewFromBigInt(new(big.Int).SetUint64(total.SyncCommitteePenalty), 0))

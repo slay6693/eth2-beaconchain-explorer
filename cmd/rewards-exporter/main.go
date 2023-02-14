@@ -12,11 +12,9 @@ import (
 	"math/big"
 	"time"
 
-	geth_rpc "github.com/ethereum/go-ethereum/rpc"
-
-	eth_rewards "github.com/gobitfly/eth-rewards"
 	_ "github.com/jackc/pgx/v4/stdlib"
 	"github.com/prysmaticlabs/prysm/v3/api/client/beacon"
+	eth_rewards "github.com/prysmaticlabs/prysm/v3/explorer/stateprocessor"
 	"github.com/sirupsen/logrus"
 )
 
@@ -24,7 +22,7 @@ func main() {
 
 	configPath := flag.String("config", "", "Path to the config file, if empty string defaults will be used")
 	bnAddress := flag.String("beacon-node-address", "", "Url of the beacon node api")
-	enAddress := flag.String("execution-node-address", "", "Url of the execution node api")
+	flag.String("execution-node-address", "", "Url of the execution node api")
 	epoch := flag.Int64("epoch", -1, "epoch to export (use -1 to export latest finalized epoch)")
 	network := flag.String("network", "", "Config to use (can be mainnet, prater or sepolia")
 
@@ -64,10 +62,10 @@ func main() {
 		logrus.Fatal(err)
 	}
 
-	elClient, err := geth_rpc.Dial(*enAddress)
-	if err != nil {
-		logrus.Fatal(err)
-	}
+	// elClient, err := geth_rpc.Dial(*enAddress)
+	// if err != nil {
+	// 	logrus.Fatal(err)
+	// }
 
 	bt, err := db.InitBigtable(utils.Config.Bigtable.Project, utils.Config.Bigtable.Instance, fmt.Sprintf("%d", utils.Config.Chain.Config.DepositChainID))
 	if err != nil {
@@ -93,15 +91,15 @@ func main() {
 			start := time.Now()
 			logrus.Infof("retrieving rewards details for epoch %v", *epoch)
 
-			rewards, err := eth_rewards.GetRewardsForEpoch(int(*epoch), client, elClient, *network)
+			epochData, err := eth_rewards.GetEpochData(nil, *network, uint64(*epoch), client)
 
 			if err != nil {
 				logrus.Fatalf("error retrieving reward details for epoch %v: %v", *epoch, err)
 			} else {
-				logrus.Infof("retrieved %v reward details for epoch %v in %v", len(rewards), *epoch, time.Since(start))
+				logrus.Infof("retrieved %v reward details for epoch %v in %v", len(epochData.Validators), *epoch, time.Since(start))
 			}
 
-			err = bt.SaveValidatorIncomeDetails(uint64(*epoch), rewards)
+			err = bt.SaveValidatorIncomeDetails(uint64(*epoch), epochData)
 			if err != nil {
 				logrus.Fatalf("error saving reward details to bigtable: %v", err)
 			}
@@ -111,15 +109,15 @@ func main() {
 	start := time.Now()
 	logrus.Infof("retrieving rewards details for epoch %v", *epoch)
 
-	rewards, err := eth_rewards.GetRewardsForEpoch(int(*epoch), client, elClient, *network)
+	epochData, err := eth_rewards.GetEpochData(nil, *network, uint64(*epoch), client)
 
 	if err != nil {
 		logrus.Fatalf("error retrieving reward details for epoch %v: %v", *epoch, err)
 	} else {
-		logrus.Infof("retrieved %v reward details for epoch %v in %v", len(rewards), *epoch, time.Since(start))
+		logrus.Infof("retrieved %v reward details for epoch %v in %v", len(epochData.Validators), *epoch, time.Since(start))
 	}
 
-	err = bt.SaveValidatorIncomeDetails(uint64(*epoch), rewards)
+	err = bt.SaveValidatorIncomeDetails(uint64(*epoch), epochData)
 	if err != nil {
 		logrus.Fatalf("error saving reward details to bigtable: %v", err)
 	}

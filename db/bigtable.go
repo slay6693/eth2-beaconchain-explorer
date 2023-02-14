@@ -12,7 +12,8 @@ import (
 	"time"
 
 	gcp_bigtable "cloud.google.com/go/bigtable"
-	itypes "github.com/gobitfly/eth-rewards/types"
+	"github.com/prysmaticlabs/prysm/v3/explorer/stateprocessor"
+	"github.com/prysmaticlabs/prysm/v3/explorer/tracer"
 	"google.golang.org/api/option"
 	"google.golang.org/protobuf/proto"
 )
@@ -1217,19 +1218,20 @@ func (bigtable *Bigtable) GetValidatorProposalHistory(validators []uint64, start
 	return res, nil
 }
 
-func (bigtable *Bigtable) SaveValidatorIncomeDetails(epoch uint64, rewards map[uint64]*itypes.ValidatorEpochIncome) error {
+func (bigtable *Bigtable) SaveValidatorIncomeDetails(epoch uint64, epochData *stateprocessor.EpochData) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
 	defer cancel()
 
 	start := time.Now()
 	ts := gcp_bigtable.Timestamp(utils.EpochToTime(epoch).UnixMicro())
 
-	total := &itypes.ValidatorEpochIncome{}
+	total := &tracer.ValidatorEpochIncome{}
 
 	mut := gcp_bigtable.NewMutation()
 
 	muts := 0
-	for i, rewardDetails := range rewards {
+	for i, validatorData := range epochData.Validators {
+		rewardDetails := validatorData.IncomeDetails
 		muts++
 
 		data, err := proto.Marshal(rewardDetails)
@@ -1250,6 +1252,7 @@ func (bigtable *Bigtable) SaveValidatorIncomeDetails(epoch uint64, rewards map[u
 		}
 
 		total.AttestationHeadReward += rewardDetails.AttestationHeadReward
+		total.AttestationHeadPenalty += rewardDetails.AttestationHeadPenalty
 		total.AttestationSourceReward += rewardDetails.AttestationSourceReward
 		total.AttestationSourcePenalty += rewardDetails.AttestationSourcePenalty
 		total.AttestationTargetReward += rewardDetails.AttestationTargetReward
@@ -1281,7 +1284,7 @@ func (bigtable *Bigtable) SaveValidatorIncomeDetails(epoch uint64, rewards map[u
 	return nil
 }
 
-func (bigtable *Bigtable) GetEpochIncomeHistoryDescending(startEpoch uint64, limit int64) (*itypes.ValidatorEpochIncome, error) {
+func (bigtable *Bigtable) GetEpochIncomeHistoryDescending(startEpoch uint64, limit int64) (*tracer.ValidatorEpochIncome, error) {
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(time.Second*30))
 	defer cancel()
 
@@ -1292,7 +1295,7 @@ func (bigtable *Bigtable) GetEpochIncomeHistoryDescending(startEpoch uint64, lim
 	columnFilter := gcp_bigtable.ColumnFilter(SUM_COLUMN)
 	filter := gcp_bigtable.RowFilter(gcp_bigtable.ChainFilters(family, columnFilter))
 
-	res := itypes.ValidatorEpochIncome{}
+	res := tracer.ValidatorEpochIncome{}
 
 	err := bigtable.tableBeaconchain.ReadRows(ctx, gcp_bigtable.NewRange(rangeStart, rangeEnd), func(r gcp_bigtable.Row) bool {
 		if len(r[STATS_COLUMN_FAMILY]) == 0 {
@@ -1313,7 +1316,7 @@ func (bigtable *Bigtable) GetEpochIncomeHistoryDescending(startEpoch uint64, lim
 	return &res, nil
 }
 
-func (bigtable *Bigtable) GetEpochIncomeHistory(epoch uint64) (*itypes.ValidatorEpochIncome, error) {
+func (bigtable *Bigtable) GetEpochIncomeHistory(epoch uint64) (*tracer.ValidatorEpochIncome, error) {
 
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(time.Second*30))
 	defer cancel()
@@ -1330,7 +1333,7 @@ func (bigtable *Bigtable) GetEpochIncomeHistory(epoch uint64) (*itypes.Validator
 	}
 
 	if row != nil {
-		res := itypes.ValidatorEpochIncome{}
+		res := tracer.ValidatorEpochIncome{}
 		err := proto.Unmarshal(row[STATS_COLUMN_FAMILY][0].Value, &res)
 		if err != nil {
 			return nil, fmt.Errorf("error decoding income data for row %v: %w", row.Key(), err)
@@ -1344,11 +1347,12 @@ func (bigtable *Bigtable) GetEpochIncomeHistory(epoch uint64) (*itypes.Validator
 		logger.WithError(err).Error("error getting validator income history")
 	}
 
-	total := &itypes.ValidatorEpochIncome{}
+	total := &tracer.ValidatorEpochIncome{}
 
 	for _, epochs := range income {
 		for _, details := range epochs {
 			total.AttestationHeadReward += details.AttestationHeadReward
+			total.AttestationHeadPenalty += details.AttestationHeadPenalty
 			total.AttestationSourceReward += details.AttestationSourceReward
 			total.AttestationSourcePenalty += details.AttestationSourcePenalty
 			total.AttestationTargetReward += details.AttestationTargetReward
@@ -1369,7 +1373,7 @@ func (bigtable *Bigtable) GetEpochIncomeHistory(epoch uint64) (*itypes.Validator
 }
 
 // GetValidatorIncomeDetailsHistory returns the validator income details, which have a garbage collection policy of one day.
-func (bigtable *Bigtable) GetValidatorIncomeDetailsHistory(validators []uint64, startEpoch uint64, limit int64) (map[uint64]map[uint64]*itypes.ValidatorEpochIncome, error) {
+func (bigtable *Bigtable) GetValidatorIncomeDetailsHistory(validators []uint64, startEpoch uint64, limit int64) (map[uint64]map[uint64]*tracer.ValidatorEpochIncome, error) {
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(time.Second*180))
 	defer cancel()
 
@@ -1385,7 +1389,7 @@ func (bigtable *Bigtable) GetValidatorIncomeDetailsHistory(validators []uint64, 
 	rangeStart := fmt.Sprintf("%s:e:b:%s", bigtable.chainId, reversedPaddedEpoch(startEpoch))
 	rangeEnd := fmt.Sprintf("%s:e:b:%s", bigtable.chainId, reversedPaddedEpoch(endEpoch))
 	// logger.Infof("range: %v to %v", rangeStart, rangeEnd)
-	res := make(map[uint64]map[uint64]*itypes.ValidatorEpochIncome, len(validators))
+	res := make(map[uint64]map[uint64]*tracer.ValidatorEpochIncome, len(validators))
 
 	valLen := len(validators)
 
@@ -1427,7 +1431,7 @@ func (bigtable *Bigtable) GetValidatorIncomeDetailsHistory(validators []uint64, 
 				return false
 			}
 
-			incomeDetails := &itypes.ValidatorEpochIncome{}
+			incomeDetails := &tracer.ValidatorEpochIncome{}
 			err = proto.Unmarshal(ri.Value, incomeDetails)
 			if err != nil {
 				logger.Errorf("error decoding validator income data for row %v: %v", r.Key(), err)
@@ -1435,7 +1439,7 @@ func (bigtable *Bigtable) GetValidatorIncomeDetailsHistory(validators []uint64, 
 			}
 
 			if res[validator] == nil {
-				res[validator] = make(map[uint64]*itypes.ValidatorEpochIncome, limit)
+				res[validator] = make(map[uint64]*tracer.ValidatorEpochIncome, limit)
 			}
 
 			res[validator][max_epoch-epoch] = incomeDetails

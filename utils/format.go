@@ -24,7 +24,7 @@ import (
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
 
-	itypes "github.com/gobitfly/eth-rewards/types"
+	itypes "github.com/prysmaticlabs/prysm/v3/explorer/tracer"
 )
 
 func FormatMessageToHtml(message string) template.HTML {
@@ -139,7 +139,7 @@ func FormatBalanceChangeFormated(balance *int64, currencyName string, details *i
 
 		income += fmt.Sprintf("Att. Source: %s GWei<br/>", FormatAddCommasFormated(float64(int64(details.AttestationSourceReward)-int64(details.AttestationSourcePenalty)), 0))
 		income += fmt.Sprintf("Att. Target: %s GWei<br/>", FormatAddCommasFormated(float64(int64(details.AttestationTargetReward)-int64(details.AttestationTargetPenalty)), 0))
-		income += fmt.Sprintf("Att. Head Vote: %s GWei<br/>", FormatAddCommasFormated(float64(details.AttestationHeadReward), 0))
+		income += fmt.Sprintf("Att. Head Vote: %s GWei<br/>", FormatAddCommasFormated(float64(int64(details.AttestationHeadReward)-int64(details.AttestationHeadPenalty)), 0))
 
 		if details.FinalityDelayPenalty > 0 {
 			income += fmt.Sprintf("Finality Delay Penalty: %s GWei<br/>", FormatAddCommasFormated(float64(details.FinalityDelayPenalty)*-1, 0))

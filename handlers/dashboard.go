@@ -116,7 +116,7 @@ func Heatmap(w http.ResponseWriter, r *http.Request) {
 	heatmapData.IncomeData = make([][3]int64, 0, validatorCount*100)
 	for validator, epochs := range incomeData {
 		for epoch, income := range epochs {
-			income := int64(income.AttestationHeadReward+income.AttestationSourceReward+income.AttestationTargetReward) - int64(income.AttestationSourcePenalty+income.AttestationTargetPenalty)
+			income := int64(income.AttestationHeadReward+income.AttestationSourceReward+income.AttestationTargetReward) - int64(income.AttestationSourcePenalty+income.AttestationTargetPenalty+income.AttestationHeadPenalty)
 			if income > heatmapData.MaxIncome {
 				heatmapData.MaxIncome = income
 			}

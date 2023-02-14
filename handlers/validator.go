@@ -30,7 +30,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/juliangruber/go-intersect"
 
-	itypes "github.com/gobitfly/eth-rewards/types"
+	itypes "github.com/prysmaticlabs/prysm/v3/explorer/tracer"
 )
 
 var validatorEditFlash = "edit_validator_flash"

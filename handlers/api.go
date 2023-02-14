@@ -32,7 +32,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
 
-	itypes "github.com/gobitfly/eth-rewards/types"
+	itypes "github.com/prysmaticlabs/prysm/v3/explorer/tracer"
 )
 
 // @title Beaconcha.in Ethereum API Documentation

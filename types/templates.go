@@ -13,9 +13,9 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	geth_types "github.com/ethereum/go-ethereum/core/types"
-	itypes "github.com/gobitfly/eth-rewards/types"
 	"github.com/lib/pq"
 	"github.com/pkg/errors"
+	itypes "github.com/prysmaticlabs/prysm/v3/explorer/tracer"
 )
 
 // PageData is a struct to hold web page data
