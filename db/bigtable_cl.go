@@ -8,11 +8,18 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	gcp_bigtable "cloud.google.com/go/bigtable"
 )
 
 func (bigtable *Bigtable) SaveEpoch(data *types.EpochData) error {
+
+	logger.Infof("starting new cl bigtable export for epoch %v", data.Epoch)
+	start := time.Now()
+	defer func() {
+		logger.Infof("new cl bigtable export for epoch %v completed in %v", data.Epoch, time.Since(start))
+	}()
 
 	tsZero := gcp_bigtable.Timestamp(0)
 
@@ -150,12 +157,12 @@ func (bigtable *Bigtable) SaveEpoch(data *types.EpochData) error {
 	}
 
 	for day, validators := range muts {
-		for validatorIndex, mutation := range validators {
-
-			bulkMut.Keys = append(bulkMut.Keys, fmt.Sprintf("%s:v:%s:d:%s", bigtable.chainId, reverseValidatorIndex(validatorIndex), reversedPaddedDay(day)))
-			bulkMut.Muts = append(bulkMut.Muts, mutation)
+		// sort all mutation in descrending order to match bigtable insert order
+		for i := len(validators) - 1; i >= 0; i-- {
+			bulkMut.Keys = append(bulkMut.Keys, fmt.Sprintf("%s:v:%s:d:%s", bigtable.chainId, reverseValidatorIndex(uint64(i)), reversedPaddedDay(day)))
+			bulkMut.Muts = append(bulkMut.Muts, validators[uint64(i)])
 		}
 	}
 
-	return bigtable.WriteBulk(bulkMut, bigtable.tableBeaconchain)
+	return bigtable.WriteBulk(bulkMut, bigtable.tableBeaconchainValidators)
 }
