@@ -39,7 +39,8 @@ const (
 type Bigtable struct {
 	client *gcp_bigtable.Client
 
-	tableBeaconchain *gcp_bigtable.Table
+	tableBeaconchain           *gcp_bigtable.Table
+	tableBeaconchainValidators *gcp_bigtable.Table
 
 	tableData            *gcp_bigtable.Table
 	tableBlocks          *gcp_bigtable.Table
@@ -63,14 +64,15 @@ func InitBigtable(project, instance, chainId string) (*Bigtable, error) {
 	}
 
 	bt := &Bigtable{
-		client:               btClient,
-		tableData:            btClient.Open("data"),
-		tableBlocks:          btClient.Open("blocks"),
-		tableMetadataUpdates: btClient.Open("metadata_updates"),
-		tableMetadata:        btClient.Open("metadata"),
-		tableBeaconchain:     btClient.Open("beaconchain"),
-		tableMachineMetrics:  btClient.Open("machine_metrics"),
-		chainId:              chainId,
+		client:                     btClient,
+		tableData:                  btClient.Open("data"),
+		tableBlocks:                btClient.Open("blocks"),
+		tableMetadataUpdates:       btClient.Open("metadata_updates"),
+		tableMetadata:              btClient.Open("metadata"),
+		tableBeaconchain:           btClient.Open("beaconchain"),
+		tableBeaconchainValidators: btClient.Open("beaconchain_validators"),
+		tableMachineMetrics:        btClient.Open("machine_metrics"),
+		chainId:                    chainId,
 	}
 
 	BigtableClient = bt
@@ -1517,6 +1519,15 @@ func reversedPaddedEpoch(epoch uint64) string {
 	return fmt.Sprintf("%09d", max_block_number-epoch)
 }
 
+func reversedPaddedDay(day uint64) string {
+	return fmt.Sprintf("%09d", max_block_number-1-day) // use -1 so that the 0 day also is in the correct sort order
+}
+
 func reversedPaddedSlot(slot uint64) string {
 	return fmt.Sprintf("%09d", max_block_number-slot)
+}
+
+func reverseValidatorIndex(validatorIndex uint64) string {
+	indexString := fmt.Sprintf("%09d", validatorIndex)
+	return utils.Reverse(indexString)
 }
