@@ -960,26 +960,6 @@ CREATE TABLE blocks_tags (
 CREATE INDEX idx_blocks_tags_slot ON blocks_tags (slot);
 CREATE INDEX idx_blocks_tags_tag_id ON blocks_tags (tag_id);
 
-CREATE TABLE relays (
-	tag_id varchar NOT NULL,
-	endpoint varchar NOT NULL,
-	PRIMARY KEY (tag_id, endpoint),
-	FOREIGN KEY (tag_id) REFERENCES tags(id)
-);
-
-DROP TABLE IF EXISTS relays;
-
-CREATE TABLE relays (
-	tag_id varchar NOT NULL,
-	endpoint varchar NOT NULL,
-	public_link varchar NULL,
-	is_censoring bool NULL,
-	is_ethical bool NULL,
-	PRIMARY KEY (tag_id, endpoint),
-	FOREIGN KEY (tag_id) REFERENCES tags(id)
-);
-
-
 DROP TABLE IF EXISTS relays_blocks;
 
 CREATE TABLE relays_blocks (
