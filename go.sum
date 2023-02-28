@@ -430,6 +430,8 @@ github.com/go-stack/stack v1.8.1/go.mod h1:dcoOX6HbPZSZptuspn9bctJ+N/CnF5gGygcUP
 github.com/go-task/slim-sprig v0.0.0-20210107165309-348f09dbbbc0/go.mod h1:fyg7847qk6SyHyPtNmDHnmrv/HOrqktSC+C9fM+CJOE=
 github.com/gobitfly/eth-rewards v0.1.2-0.20230224192318-ef649812fa91 h1:0XL9C9tFBTmB9BGJ8Vu0RLYZKXDfuj8zmwV4i6XmBP4=
 github.com/gobitfly/eth-rewards v0.1.2-0.20230224192318-ef649812fa91/go.mod h1:JrFv2uq5i+p6yEoRSHralEV139HkPV0wBjZZHWb4he8=
+github.com/gobitfly/eth-rewards v0.1.2-0.20230228100621-c946a1305eae h1:2TkTiWC/uJsajSXlrUrzM1VLL6ROLa1danD+IiWbpN0=
+github.com/gobitfly/eth-rewards v0.1.2-0.20230228100621-c946a1305eae/go.mod h1:JrFv2uq5i+p6yEoRSHralEV139HkPV0wBjZZHWb4he8=
 github.com/gobitfly/eth.store v0.0.0-20221012115129-3b4606992669 h1:nGqtKWpeItBrYO0TkdSSpeVRpjcWW6il28EasO9WZSo=
 github.com/gobitfly/eth.store v0.0.0-20221012115129-3b4606992669/go.mod h1:NlB9l6tiM42FM5qQHIsG/Iey6AJ0XQvRcKkmt63/ve0=
 github.com/gobitfly/go-ethereum v1.8.13-0.20230227100926-e78d720a0bf6 h1:+UQaGVb3Pcs0ckHpSs8rGTD/T+10SRR4HhiWzWiNElc=
