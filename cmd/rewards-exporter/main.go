@@ -77,7 +77,8 @@ func main() {
 		start := time.Now()
 		epochsCompleted := int64(0)
 		notExportedEpochs := []uint64{}
-		err = db.WriterDb.Select(&notExportedEpochs, "SELECT epoch FROM epochs WHERE finalized AND NOT rewards_exported AND epoch >= $1 AND epoch <= $2 ORDER BY epoch DESC", *epochStart, *epochEnd)
+
+		err = db.WriterDb.Select(&notExportedEpochs, "SELECT epoch FROM epochs WHERE finalized AND NOT rewards_exported AND epoch >= $1 AND epoch >= $2 AND epoch <= $3 ORDER BY epoch DESC", utils.Config.Chain.Config.AltairForkEpoch, *epochStart, *epochEnd)
 		if err != nil {
 			logrus.Fatal(err)
 		}
@@ -131,7 +132,7 @@ func main() {
 		lastExportedEpoch := uint64(0)
 		for {
 			notExportedEpochs := []uint64{}
-			err = db.WriterDb.Select(&notExportedEpochs, "SELECT epoch FROM epochs WHERE finalized AND NOT rewards_exported AND epoch > $1 ORDER BY epoch desc LIMIT 10", lastExportedEpoch)
+			err = db.WriterDb.Select(&notExportedEpochs, "SELECT epoch FROM epochs WHERE finalized AND NOT rewards_exported AND epoch >= $1 AND epoch > $1 ORDER BY epoch desc LIMIT 10", utils.Config.Chain.Config.AltairForkEpoch, lastExportedEpoch)
 			if err != nil {
 				utils.LogFatal(err, "getting chain head from lighthouse error", 0)
 			}
