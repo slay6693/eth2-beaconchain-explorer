@@ -8,6 +8,7 @@ import (
 	"eth2-exporter/version"
 	"flag"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -55,7 +56,13 @@ func main() {
 	defer db.ReaderDb.Close()
 	defer db.WriterDb.Close()
 
-	client := beacon.NewClient(*bnAddress, time.Minute*5)
+	clClients := make([]*beacon.Client, 0)
+	elClients := make([]string, 0)
+
+	for _, c := range strings.Split(*bnAddress, ",") {
+		clClients = append(clClients, beacon.NewClient(c, time.Minute*5))
+	}
+	elClients = append(elClients, strings.Split(*enAddress, ",")...)
 
 	bt, err := db.InitBigtable(utils.Config.Bigtable.Project, utils.Config.Bigtable.Instance, fmt.Sprintf("%d", utils.Config.Chain.Config.DepositChainID))
 	if err != nil {
@@ -99,7 +106,7 @@ func main() {
 		for _, e := range notExportedEpochs {
 			e := e
 			g.Go(func() error {
-				err := export(e, bt, client, enAddress)
+				err := export(e, bt, clClients, elClients)
 
 				if err != nil {
 					logrus.Error(err)
@@ -129,7 +136,7 @@ func main() {
 				utils.LogFatal(err, "getting chain head from lighthouse error", 0)
 			}
 			for _, e := range notExportedEpochs {
-				err := export(e, bt, client, enAddress)
+				err := export(e, bt, clClients, elClients)
 
 				if err != nil {
 					logrus.Error(err)
@@ -154,17 +161,20 @@ func main() {
 		}
 	}
 
-	err = export(uint64(*epoch), bt, client, enAddress)
+	err = export(uint64(*epoch), bt, clClients, elClients)
 	if err != nil {
 		logrus.Fatal(err)
 	}
 }
 
-func export(epoch uint64, bt *db.Bigtable, client *beacon.Client, elClient *string) error {
+func export(epoch uint64, bt *db.Bigtable, clClients []*beacon.Client, elClients []string) error {
 	start := time.Now()
 	logrus.Infof("retrieving rewards details for epoch %v", epoch)
 
-	rewards, err := eth_rewards.GetRewardsForEpoch(epoch, client, *elClient)
+	clClient := clClients[epoch%uint64(len(clClients))]
+	elClient := elClients[epoch%uint64(len(elClients))]
+
+	rewards, err := eth_rewards.GetRewardsForEpoch(epoch, clClient, elClient)
 
 	if err != nil {
 		return fmt.Errorf("error retrieving reward details for epoch %v: %v", epoch, err)
