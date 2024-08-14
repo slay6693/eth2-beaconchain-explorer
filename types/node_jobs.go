@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/attestantio/go-eth2-client/spec/capella"
@@ -49,6 +50,14 @@ type NodeJob struct {
 	Data                interface{}   `db:"-"`
 }
 
+type CreateNodeJobUserError struct {
+	Message string
+}
+
+func (e CreateNodeJobUserError) Error() string {
+	return e.Message
+}
+
 type NodeJobValidatorInfo struct {
 	ValidatorIndex      uint64 `db:"validatorindex"`
 	PublicKey           []byte `db:"pubkey"`
@@ -60,7 +69,7 @@ type NodeJobValidatorInfo struct {
 // ParseData will try to unmarshal NodeJob.RawData into NodeJob.Data and determine NodeJob.Type by doing so. If it is not able to unmarshal any type it will return an error. It will sanitize NodeJob.RawData on success.
 func (nj *NodeJob) ParseData() error {
 	if len(nj.RawData) == 0 {
-		return fmt.Errorf("job-data is empty")
+		return CreateNodeJobUserError{Message: "data is empty"}
 	}
 	{
 		d := []*capella.SignedBLSToExecutionChange{}
@@ -69,6 +78,9 @@ func (nj *NodeJob) ParseData() error {
 			if nj.Type != "" && nj.Type != UnknownNodeJobType && nj.Type != BLSToExecutionChangesNodeJobType {
 				return fmt.Errorf("nodejob.RawData mismatches nodejob.Type (%v)", nj.Type)
 			}
+			sort.Slice(d, func(i, j int) bool {
+				return d[i].Message.ValidatorIndex < d[j].Message.ValidatorIndex
+			})
 			nj.Type = BLSToExecutionChangesNodeJobType
 			nj.Data = d
 			return nj.SanitizeRawData()
@@ -78,7 +90,7 @@ func (nj *NodeJob) ParseData() error {
 		//var d *VoluntaryExitsNodeJobData
 		var d *phase0.SignedVoluntaryExit
 		err := json.Unmarshal(nj.RawData, &d)
-		if err == nil && d.Message.Epoch != 0 {
+		if err == nil {
 			if nj.Type != "" && nj.Type != UnknownNodeJobType && nj.Type != VoluntaryExitsNodeJobType {
 				return fmt.Errorf("nodejob.RawData mismatches nodejob.Type (%v)", nj.Type)
 			}
@@ -87,7 +99,7 @@ func (nj *NodeJob) ParseData() error {
 			return nj.SanitizeRawData()
 		}
 	}
-	return fmt.Errorf("can not unmarshal job-data")
+	return CreateNodeJobUserError{Message: "can not unmarshal data: invalid json"}
 }
 
 func (nj *NodeJob) SanitizeRawData() error {

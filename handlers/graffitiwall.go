@@ -1,10 +1,12 @@
 package handlers
 
 import (
-	"eth2-exporter/db"
-	"eth2-exporter/templates"
-	"eth2-exporter/types"
 	"net/http"
+
+	"github.com/gobitfly/eth2-beaconchain-explorer/db"
+	"github.com/gobitfly/eth2-beaconchain-explorer/templates"
+	"github.com/gobitfly/eth2-beaconchain-explorer/types"
+	"github.com/gobitfly/eth2-beaconchain-explorer/utils"
 )
 
 func Graffitiwall(w http.ResponseWriter, r *http.Request) {
@@ -17,11 +19,12 @@ func Graffitiwall(w http.ResponseWriter, r *http.Request) {
 
 	var graffitiwallData []*types.GraffitiwallData
 
-	err = db.ReaderDb.Select(&graffitiwallData, "select x, y, color, slot, validator from graffitiwall")
+	// only fetch latest entry for each pixel
+	err = db.ReaderDb.Select(&graffitiwallData, "SELECT DISTINCT ON (x, y) x, y, color, slot, validator from graffitiwall ORDER BY x, y, slot DESC")
 
 	if err != nil {
-		logger.Errorf("error retrieving block tree data: %v", err)
-		http.Error(w, "Internal server error", http.StatusServiceUnavailable)
+		utils.LogError(err, "error retrieving graffitiwall data", 0)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 

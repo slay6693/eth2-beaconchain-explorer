@@ -2,10 +2,11 @@ package services
 
 import (
 	"encoding/json"
-	"eth2-exporter/db"
-	"eth2-exporter/utils"
-	"eth2-exporter/version"
 	"os"
+
+	"github.com/gobitfly/eth2-beaconchain-explorer/db"
+	"github.com/gobitfly/eth2-beaconchain-explorer/utils"
+	"github.com/gobitfly/eth2-beaconchain-explorer/version"
 )
 
 // Report the status of a particular service, will add current Pid and executable name
@@ -30,6 +31,6 @@ func ReportStatus(name, status string, metadata *json.RawMessage) {
 	`, name, execName, version, pid, status, metadata)
 
 	if err != nil {
-		logger.Errorf("error reporting service status: %v", err)
+		utils.LogError(err, "error reporting service status", 0, map[string]interface{}{"name": name, "status": status})
 	}
 }

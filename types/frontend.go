@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
-	"fmt"
 	"html/template"
 	"math/big"
 	"strings"
@@ -47,10 +46,20 @@ const (
 	TaxReportEventName                               EventName = "user_tax_report"
 	RocketpoolCommissionThresholdEventName           EventName = "rocketpool_commision_threshold"
 	RocketpoolNewClaimRoundStartedEventName          EventName = "rocketpool_new_claimround"
-	RocketpoolColleteralMinReached                   EventName = "rocketpool_colleteral_min"
-	RocketpoolColleteralMaxReached                   EventName = "rocketpool_colleteral_max"
+	RocketpoolCollateralMinReached                   EventName = "rocketpool_colleteral_min"
+	RocketpoolCollateralMaxReached                   EventName = "rocketpool_colleteral_max"
 	SyncCommitteeSoon                                EventName = "validator_synccommittee_soon"
 )
+
+var MachineEvents = []EventName{
+	MonitoringMachineCpuLoadEventName,
+	MonitoringMachineOfflineEventName,
+	MonitoringMachineDiskAlmostFullEventName,
+	MonitoringMachineCpuLoadEventName,
+	MonitoringMachineMemoryUsageEventName,
+	MonitoringMachineSwitchedToETH2FallbackEventName,
+	MonitoringMachineSwitchedToETH1FallbackEventName,
+}
 
 var UserIndexEvents = []EventName{
 	EthClientUpdateEventName,
@@ -80,7 +89,7 @@ var EventLabel map[EventName]string = map[EventName]string{
 	NetworkValidatorExitQueueFullEventName:           "The validator exit queue is full",
 	NetworkValidatorExitQueueNotFullEventName:        "The validator exit queue is empty",
 	NetworkLivenessIncreasedEventName:                "The network is experiencing liveness issues",
-	EthClientUpdateEventName:                         "A ethereum client has a new available update",
+	EthClientUpdateEventName:                         "An Ethereum client has a new update available",
 	MonitoringMachineOfflineEventName:                "Your machine(s) might be offline",
 	MonitoringMachineDiskAlmostFullEventName:         "Your machine(s) disk space is running low",
 	MonitoringMachineCpuLoadEventName:                "Your machine(s) has a high CPU load",
@@ -88,15 +97,24 @@ var EventLabel map[EventName]string = map[EventName]string{
 	MonitoringMachineSwitchedToETH2FallbackEventName: "Your machine(s) is using its consensus client fallback",
 	MonitoringMachineSwitchedToETH1FallbackEventName: "Your machine(s) is using its execution client fallback",
 	TaxReportEventName:                               "You have an available tax report",
-	RocketpoolCommissionThresholdEventName:           "Your configured rocket pool commission threshold is reached",
-	RocketpoolNewClaimRoundStartedEventName:          "Your rocket pool claim round is available",
-	RocketpoolColleteralMinReached:                   "You reached the rocketpool min collateral",
-	RocketpoolColleteralMaxReached:                   "You reached the rocketpool max collateral",
+	RocketpoolCommissionThresholdEventName:           "Your configured Rocket Pool commission threshold is reached",
+	RocketpoolNewClaimRoundStartedEventName:          "Your Rocket Pool claim from last round is available",
+	RocketpoolCollateralMinReached:                   "You reached the Rocket Pool min RPL collateral",
+	RocketpoolCollateralMaxReached:                   "You reached the Rocket Pool max RPL collateral",
 	SyncCommitteeSoon:                                "Your validator(s) will soon be part of the sync committee",
 }
 
 func IsUserIndexed(event EventName) bool {
 	for _, ev := range UserIndexEvents {
+		if ev == event {
+			return true
+		}
+	}
+	return false
+}
+
+func IsMachineNotification(event EventName) bool {
+	for _, ev := range MachineEvents {
 		if ev == event {
 			return true
 		}
@@ -130,8 +148,8 @@ var EventNames = []EventName{
 	TaxReportEventName,
 	RocketpoolCommissionThresholdEventName,
 	RocketpoolNewClaimRoundStartedEventName,
-	RocketpoolColleteralMinReached,
-	RocketpoolColleteralMaxReached,
+	RocketpoolCollateralMinReached,
+	RocketpoolCollateralMaxReached,
 	SyncCommitteeSoon,
 }
 
@@ -292,12 +310,14 @@ type MobileSubscriptionTransactionGeneric struct {
 }
 
 type PremiumData struct {
-	ID        uint64    `db:"id"`
-	Receipt   string    `db:"receipt"`
-	Store     string    `db:"store"`
-	Active    bool      `db:"active"`
-	ProductID string    `db:"product_id"`
-	ExpiresAt time.Time `db:"expires_at"`
+	ID               uint64    `db:"id"`
+	Receipt          string    `db:"receipt"`
+	Store            string    `db:"store"`
+	Active           bool      `db:"active"`
+	ValidateRemotely bool      `db:"validate_remotely"`
+	ProductID        string    `db:"product_id"`
+	UserID           uint64    `db:"user_id"`
+	ExpiresAt        time.Time `db:"expires_at"`
 }
 
 type UserWithPremium struct {
@@ -504,6 +524,12 @@ func (a ErrorResponse) Value() (driver.Value, error) {
 	return json.Marshal(a)
 }
 
+type EnsSearchPageData = struct {
+	Error  string
+	Search string
+	Result *EnsDomainResponse
+}
+
 type GasNowPageData struct {
 	Code int `json:"code"`
 	Data struct {
@@ -525,18 +551,15 @@ type Eth1AddressSearchItem struct {
 }
 
 type RawMempoolResponse struct {
-	Pending map[string]map[int]RawMempoolTransaction `json:"pending"`
+	Pending map[string]map[string]*RawMempoolTransaction `json:"pending"`
+	Queued  map[string]map[string]*RawMempoolTransaction `json:"queued"`
+	BaseFee map[string]map[string]*RawMempoolTransaction `json:"baseFee"`
+
+	TxsByHash map[common.Hash]*RawMempoolTransaction
 }
 
 func (mempool RawMempoolResponse) FindTxByHash(txHashString string) *RawMempoolTransaction {
-	for _, pendingData := range mempool.Pending {
-		for _, tx := range pendingData {
-			if fmt.Sprintf("%s", tx.Hash) == txHashString {
-				return &tx
-			}
-		}
-	}
-	return nil
+	return mempool.TxsByHash[common.HexToHash(txHashString)]
 }
 
 type RawMempoolTransaction struct {
@@ -546,6 +569,7 @@ type RawMempoolTransaction struct {
 	Value            *hexutil.Big    `json:"value"`
 	Gas              *hexutil.Big    `json:"gas"`
 	GasFeeCap        *hexutil.Big    `json:"maxFeePerGas,omitempty"`
+	GasTipCap        *hexutil.Big    `json:"maxPriorityFeePerGas,omitempty"`
 	GasPrice         *hexutil.Big    `json:"gasPrice"`
 	Nonce            *hexutil.Big    `json:"nonce"`
 	Input            *string         `json:"input"`
@@ -556,4 +580,38 @@ type MempoolTxPageData struct {
 	RawMempoolTransaction
 	TargetIsContract   bool
 	IsContractCreation bool
+}
+
+type SyncCommitteesStats struct {
+	ParticipatedSlots uint64 `db:"participated_sync" json:"participatedSlots"`
+	MissedSlots       uint64 `db:"missed_sync" json:"missedSlots"`
+	OrphanedSlots     uint64 `db:"orphaned_sync" json:"-"`
+	ScheduledSlots    uint64 `json:"scheduledSlots"`
+}
+
+type SignatureType string
+
+const (
+	MethodSignature SignatureType = "method"
+	EventSignature  SignatureType = "event"
+)
+
+type SignatureImportStatus struct {
+	LatestTimestamp *string `json:"latestTimestamp"`
+	NextPage        *string `json:"nextPage"`
+	HasFinished     bool    `json:"hasFinished"`
+}
+
+type Signature struct {
+	Id        int64  `json:"id"`
+	CreatedAt string `json:"created_at"`
+	Text      string `json:"text_signature"`
+	Hex       string `json:"hex_signature"`
+	Bytes     string `json:"bytes_signature"`
+}
+
+type SearchValidatorsByEth1Result []struct {
+	Eth1Address      string        `db:"from_address_text" json:"eth1_address"`
+	ValidatorIndices pq.Int64Array `db:"validatorindices" json:"validator_indices"`
+	Count            uint64        `db:"count" json:"-"`
 }

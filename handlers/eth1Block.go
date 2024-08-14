@@ -1,23 +1,25 @@
 package handlers
 
 import (
-	"eth2-exporter/db"
-	"eth2-exporter/rpc"
-	"eth2-exporter/services"
-	"eth2-exporter/templates"
-	"eth2-exporter/types"
-	"eth2-exporter/utils"
+	"database/sql"
 	"fmt"
 	"math/big"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/gobitfly/eth2-beaconchain-explorer/db"
+	"github.com/gobitfly/eth2-beaconchain-explorer/rpc"
+	"github.com/gobitfly/eth2-beaconchain-explorer/services"
+	"github.com/gobitfly/eth2-beaconchain-explorer/templates"
+	"github.com/gobitfly/eth2-beaconchain-explorer/types"
+	"github.com/gobitfly/eth2-beaconchain-explorer/utils"
+
+	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
 	"github.com/gorilla/mux"
 )
 
 func Eth1Block(w http.ResponseWriter, r *http.Request) {
-
 	blockTemplateFiles := append(layoutTemplateFiles,
 		"slot/slot.html",
 		"slot/transactions.html",
@@ -27,13 +29,18 @@ func Eth1Block(w http.ResponseWriter, r *http.Request) {
 		"slot/attesterSlashing.html",
 		"slot/proposerSlashing.html",
 		"slot/exits.html",
+		"components/timestamp.html",
 		"slot/overview.html",
 		"slot/execTransactions.html",
+		"slot/blobs.html",
 		"slot/withdrawals.html")
 	var blockTemplate = templates.GetTemplate(
 		blockTemplateFiles...,
 	)
-	preMergeTemplateFiles := append(layoutTemplateFiles, "execution/block.html", "slot/execTransactions.html")
+	preMergeTemplateFiles := append(layoutTemplateFiles,
+		"execution/block.html",
+		"slot/execTransactions.html",
+		"components/timestamp.html")
 	notFountTemplateFiles := append(layoutTemplateFiles, "slotnotfound.html")
 	var blockNotFoundTemplate = templates.GetTemplate(notFountTemplateFiles...)
 	var preMergeBlockTemplate = templates.GetTemplate(preMergeTemplateFiles...)
@@ -71,18 +78,25 @@ func Eth1Block(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// execute template based on whether block is pre or post merge
-	if eth1BlockPageData.Difficulty.Cmp(big.NewInt(0)) == 0 {
-		data := InitPageData(w, r, "blockchain", "/block", fmt.Sprintf("Block %d", number), blockTemplateFiles)
-		// Post Merge PoS Block
+	// special handling for networks that launch with PoS on block 0
+	isPosBlock0 := utils.IsPoSBlock0(number, eth1BlockPageData.Ts.Unix())
 
-		// calculate PoS slot number based on block timestamp
-		blockSlot := (uint64(eth1BlockPageData.Ts.Unix()) - utils.Config.Chain.GenesisTimestamp) / utils.Config.Chain.Config.SecondsPerSlot
+	// execute template based on whether block is PoW or PoS
+	if eth1BlockPageData.Difficulty.Cmp(big.NewInt(0)) == 0 || isPosBlock0 {
+		// Post Merge PoS Block
+		data := InitPageData(w, r, "blockchain", "/block", fmt.Sprintf("Block %d", number), blockTemplateFiles)
+
+		blockSlot := uint64(0)
+		if !isPosBlock0 {
+			blockSlot = utils.TimeToSlot(uint64(eth1BlockPageData.Ts.Unix()))
+		}
 
 		// retrieve consensus data
 		blockPageData, err := GetSlotPageData(blockSlot)
 		if err != nil {
-			logger.Errorf("error retrieving slot page data: %v", err)
+			if err != sql.ErrNoRows {
+				logger.Errorf("error retrieving slot page data: %v", err)
+			}
 
 			data.Data = "block"
 			if handleTemplateError(w, r, "eth1Block.go", "Eth1Block", "GetSlotPageData", blockNotFoundTemplate.ExecuteTemplate(w, "layout", data)) != nil {
@@ -99,7 +113,7 @@ func Eth1Block(w http.ResponseWriter, r *http.Request) {
 			return // an error has occurred and was processed
 		}
 	} else {
-		// Pre  Merge PoW Block
+		// Pre Merge PoW Block
 		data := InitPageData(w, r, "block", "/block", fmt.Sprintf("Block %d", eth1BlockPageData.Number), preMergeTemplateFiles)
 		data.Data = eth1BlockPageData
 
@@ -112,7 +126,7 @@ func Eth1Block(w http.ResponseWriter, r *http.Request) {
 func GetExecutionBlockPageData(number uint64, limit int) (*types.Eth1BlockPageData, error) {
 	block, err := db.BigtableClient.GetBlockFromBlocksTable(number)
 	if diffToHead := int64(services.LatestEth1BlockNumber()) - int64(number); err != nil && diffToHead < 0 && diffToHead >= -5 {
-		block, _, err = rpc.CurrentErigonClient.GetBlock(int64(number))
+		block, _, err = rpc.CurrentErigonClient.GetBlock(int64(number), "parity/geth")
 	}
 	if err != nil {
 		return nil, err
@@ -137,7 +151,20 @@ func GetExecutionBlockPageData(number uint64, limit int) (*types.Eth1BlockPageDa
 	txs := []types.Eth1BlockPageTransaction{}
 	txFees := new(big.Int)
 	lowestGasPrice := big.NewInt(1 << 62)
-	for _, tx := range block.Transactions {
+	blobTxCount := 0
+	blobCount := 0
+
+	contractInteractionTypes, err := db.BigtableClient.GetAddressContractInteractionsAtBlock(block)
+	if err != nil {
+		utils.LogError(err, "error getting contract states", 0)
+	}
+
+	for i, tx := range block.Transactions {
+		if tx.Type == 3 {
+			blobTxCount++
+			blobCount += len(tx.BlobVersionedHashes)
+		}
+
 		// sum txFees
 		txFee := db.CalculateTxFeeFromTransaction(tx, new(big.Int).SetBytes(block.BaseFee))
 		txFees.Add(txFees, txFee)
@@ -151,27 +178,28 @@ func GetExecutionBlockPageData(number uint64, limit int) (*types.Eth1BlockPageDa
 			}
 		}
 
+		contractCreation := tx.GetTo() == nil
 		// set tx to if tx is contract creation
-		if tx.To == nil && len(tx.Itx) >= 1 {
-			tx.To = tx.Itx[0].To
-			names[string(tx.To)] = "Contract Creation"
+		if contractCreation {
+			tx.To = tx.ContractAddress
 		}
 
-		method := make([]byte, 0)
-		if len(tx.GetData()) > 3 && (len(tx.GetItx()) > 0 || tx.GetGasUsed() > 21000 || tx.GetErrorMsg() != "") {
-			method = tx.GetData()[:4]
+		var contractInteraction types.ContractInteractionType
+		if len(contractInteractionTypes) > i {
+			contractInteraction = contractInteractionTypes[i]
 		}
+
 		txs = append(txs, types.Eth1BlockPageTransaction{
 			Hash:          fmt.Sprintf("%#x", tx.Hash),
-			HashFormatted: utils.FormatAddressWithLimits(tx.Hash, "", false, "tx", 15, 18, true),
+			HashFormatted: utils.FormatTransactionHash(tx.Hash, tx.ErrorMsg == ""),
 			From:          fmt.Sprintf("%#x", tx.From),
 			FromFormatted: utils.FormatAddressWithLimits(tx.From, names[string(tx.From)], false, "address", 15, 20, true),
 			To:            fmt.Sprintf("%#x", tx.To),
-			ToFormatted:   utils.FormatAddressWithLimits(tx.To, names[string(tx.To)], names[string(tx.To)] == "Contract Creation" || len(method) > 0, "address", 15, 20, true),
+			ToFormatted:   utils.FormatAddressWithLimits(tx.To, db.BigtableClient.GetAddressLabel(names[string(tx.To)], contractInteraction), contractInteraction != types.CONTRACT_NONE, "address", 15, 20, true),
 			Value:         new(big.Int).SetBytes(tx.Value),
 			Fee:           txFee,
 			GasPrice:      effectiveGasPrice,
-			Method:        fmt.Sprintf("%#x", method),
+			Method:        db.BigtableClient.GetMethodLabel(tx.GetData(), contractInteraction),
 		})
 	}
 
@@ -201,8 +229,11 @@ func GetExecutionBlockPageData(number uint64, limit int) (*types.Eth1BlockPageDa
 		}
 	}
 
-	burnedEth := new(big.Int).Mul(new(big.Int).SetBytes(block.BaseFee), big.NewInt(int64(block.GasUsed)))
-	blockReward.Add(blockReward, txFees).Add(blockReward, uncleInclusionRewards).Sub(blockReward, burnedEth)
+	blobGasPrice := eip4844.CalcBlobFee(block.ExcessBlobGas)
+	burnedTxFees := new(big.Int).Mul(new(big.Int).SetBytes(block.BaseFee), big.NewInt(int64(block.GasUsed)))
+	burnedBlobFees := new(big.Int).Mul(blobGasPrice, big.NewInt(int64(block.BlobGasUsed)))
+	burnedFees := new(big.Int).Add(burnedTxFees, burnedBlobFees)
+	blockReward.Add(blockReward, txFees).Add(blockReward, uncleInclusionRewards).Sub(blockReward, burnedTxFees)
 	nextBlock := number + 1
 	if nextBlock > services.LatestEth1BlockNumber() {
 		nextBlock = 0
@@ -213,13 +244,16 @@ func GetExecutionBlockPageData(number uint64, limit int) (*types.Eth1BlockPageDa
 		NextBlock:     nextBlock,
 		TxCount:       uint64(len(block.Transactions)),
 		UncleCount:    uint64(len(block.Uncles)),
+		BlobTxCount:   uint64(blobTxCount),
+		BlobCount:     uint64(blobCount),
 		Hash:          fmt.Sprintf("%#x", block.Hash),
 		ParentHash:    fmt.Sprintf("%#x", block.ParentHash),
 		MinerAddress:  fmt.Sprintf("%#x", block.Coinbase),
 		//MinerFormatted: utils.FormatAddress(block.Coinbase, nil, names[string(block.Coinbase)], false, false, false),
 		MinerFormatted: utils.FormatAddressWithLimits(block.Coinbase, names[string(block.Coinbase)], false, "address", 42, 42, true),
 		Reward:         blockReward,
-		MevReward:      db.CalculateMevFromBlock(block),
+		//MevReward:      db.CalculateMevFromBlock(block), // deprecated, don't show this value as mev
+		MevReward:      new(big.Int),
 		TxFees:         txFees,
 		GasUsage:       utils.FormatBlockUsage(block.GasUsed, block.GasLimit),
 		GasLimit:       block.GasLimit,
@@ -227,7 +261,12 @@ func GetExecutionBlockPageData(number uint64, limit int) (*types.Eth1BlockPageDa
 		Ts:             block.GetTime().AsTime(),
 		Difficulty:     new(big.Int).SetBytes(block.Difficulty),
 		BaseFeePerGas:  new(big.Int).SetBytes(block.BaseFee),
-		BurnedFees:     burnedEth,
+		BurnedFees:     burnedFees,
+		BurnedTxFees:   burnedTxFees,
+		BurnedBlobFees: burnedBlobFees,
+		BlobGasUsed:    block.GetBlobGasUsed(),
+		ExcessBlobGas:  block.GetExcessBlobGas(),
+		BlobGasPrice:   blobGasPrice,
 		Extra:          fmt.Sprintf("%#x", block.Extra),
 		Txs:            txs,
 		Uncles:         uncles,

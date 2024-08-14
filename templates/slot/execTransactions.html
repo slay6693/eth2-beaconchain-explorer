@@ -1,4 +1,9 @@
 {{ define "execution_transactions" }}
+  <style>
+    #transactions_table td {
+      max-width: 200px;
+    }
+  </style>
   <div class="row p-1 mx-0">
     <div class="col-md-12 text-center"><b>Showing {{ .TxCount }} Transactions </b></div>
   </div>
@@ -17,12 +22,12 @@
         {{ range .Txs }}
           <tr class="border-bottom">
             <td class="border-0">{{ .HashFormatted }}</td>
-            <td class="border-0"><span class="badge badge-light">{{ if gt (len .Method ) 0 }}{{ .Method }}{{ else }}Transfer{{ end }}</span></td>
+            <td class="border-0"><span truncate-tooltip="{{ .Method }}" class="badge badge-light text-truncate mw-100">{{ if gt (len .Method ) 0 }}{{ .Method }}{{ else }}Transfer{{ end }}</span></td>
             <td class="border-0">{{ .FromFormatted }}</td>
             <td class="border-0">{{ .ToFormatted }}</td>
-            <td class="border-0">{{ formatAmountFormatted .Value "ETH" 5 0 true true false }}</td>
-            <td class="border-0">{{ formatAmountFormatted .Fee "ETH" 5  0 true true false }}</td>
-            <td class="border-0">{{ formatAmountFormatted .GasPrice "GWei" 5 0 true true false }}</td>
+            <td class="border-0">{{ formatAmountFormatted .Value config.Frontend.ElCurrency 5 0 true true false }}</td>
+            <td class="border-0">{{ formatAmountFormatted .Fee config.Frontend.ElCurrency 5  0 true true false }}</td>
+            <td class="border-0">{{ formatAmountFormatted .GasPrice config.Frontend.ElCurrency 5 0 true true false }}</td>
           </tr>
         {{ end }}
       </tbody>
@@ -71,6 +76,7 @@
             for (let i = startElement; i < data.length; ++i) {
               infLoading.appendChild(getTransactionsElement(data[i], i == lastElement))
             }
+            $("#transactions_table").find('[data-toggle="tooltip"]').tooltip()
           } catch (err) {
             console.error("error getting lazy transactions: ", err)
             infLoading.appendChild(getInfoElementTransactions("Error loading transactions...", "red"))

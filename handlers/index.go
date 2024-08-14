@@ -2,41 +2,39 @@ package handlers
 
 import (
 	"encoding/json"
-	"eth2-exporter/services"
-	"eth2-exporter/templates"
-	"eth2-exporter/types"
-	"eth2-exporter/utils"
-	"html/template"
+	"fmt"
+	"math"
 	"net/http"
-)
 
-var indexTemplateFiles = append(layoutTemplateFiles,
-	"index/index.html",
-	"index/depositProgress.html",
-	"index/depositChart.html",
-	"index/genesis.html",
-	"index/hero.html",
-	"index/networkStats.html",
-	"index/participationWarning.html",
-	"index/postGenesis.html",
-	"index/preGenesis.html",
-	"index/recentBlocks.html",
-	"index/recentEpochs.html",
-	"index/genesisCountdown.html",
-	"index/depositDistribution.html",
-	"svg/bricks.html",
-	"svg/professor.html",
-	"svg/timeline.html",
-	"components/rocket.html",
-	"slotViz.html",
+	"github.com/gobitfly/eth2-beaconchain-explorer/services"
+	"github.com/gobitfly/eth2-beaconchain-explorer/templates"
+	"github.com/gobitfly/eth2-beaconchain-explorer/types"
+	"github.com/gobitfly/eth2-beaconchain-explorer/utils"
 )
-
-var indexTemplate = template.Must(template.New("index").Funcs(utils.GetTemplateFuncs()).ParseFS(templates.Files,
-	indexTemplateFiles...,
-))
 
 // Index will return the main "index" page using a go template
 func Index(w http.ResponseWriter, r *http.Request) {
+	var indexTemplateFiles = append(layoutTemplateFiles,
+		"index/index.html",
+		"index/depositProgress.html",
+		"index/depositChart.html",
+		"index/genesis.html",
+		"index/hero.html",
+		"index/networkStats.html",
+		"index/postGenesis.html",
+		"index/preGenesis.html",
+		"index/recentBlocks.html",
+		"index/recentEpochs.html",
+		"index/genesisCountdown.html",
+		"index/depositDistribution.html",
+		"svg/bricks.html",
+		"svg/professor.html",
+		"svg/timeline.html",
+		"components/rocket.html",
+		"slotViz.html",
+	)
+
+	var indexTemplate = templates.GetTemplate(indexTemplateFiles...)
 
 	w.Header().Set("Content-Type", "text/html")
 	data := InitPageData(w, r, "index", "", "", indexTemplateFiles)
@@ -46,6 +44,8 @@ func Index(w http.ResponseWriter, r *http.Request) {
 	pageData.Countdown = utils.Config.Frontend.Countdown
 
 	pageData.SlotVizData = getSlotVizData(data.CurrentEpoch)
+
+	calculateChurn(pageData)
 
 	data.Data = pageData
 
@@ -57,12 +57,13 @@ func Index(w http.ResponseWriter, r *http.Request) {
 // IndexPageData will show the main "index" page in json format
 func IndexPageData(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", fmt.Sprintf("public, max-age=%d", utils.Config.Chain.ClConfig.SecondsPerSlot)) // set local cache to the seconds per slot interval
 
 	err := json.NewEncoder(w).Encode(services.LatestIndexPageData())
 
 	if err != nil {
 		logger.Errorf("error sending latest index page data: %v", err)
-		http.Error(w, "Internal server error", http.StatusServiceUnavailable)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 }
@@ -93,4 +94,22 @@ func getSlotVizData(currentEpoch uint64) *types.SlotVizPageData {
 
 	}
 	return nil
+}
+
+func calculateChurn(page *types.IndexPageData) {
+	limit := services.GetLatestStats().ValidatorActivationChurnLimit
+	pending_validators := services.GetLatestStats().PendingValidatorCount
+	// calculate daily new validators
+	limit_per_day := *limit * uint64(225)
+	// calculate how long it will take for a new deposit to be processed
+	time := float64(*pending_validators) / float64((limit_per_day))
+	const hoursPerDay = 24
+	wholeDays, fractionalDays := math.Modf(time)
+
+	hours := int(fractionalDays * hoursPerDay)
+
+	time_as_days := fmt.Sprintf("%d days and %d hours", int(wholeDays), hours)
+	page.NewDepositProcessAfter = time_as_days
+	page.ValidatorsPerEpoch = *limit
+	page.ValidatorsPerDay = limit_per_day
 }

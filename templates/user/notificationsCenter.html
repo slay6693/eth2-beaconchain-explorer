@@ -229,7 +229,7 @@
           </div>
         {{ else }}
           <div class="mx-2 mb-3 pb-1 heading-l4">Hold down <kbd>Ctrl</kbd> to select multiple rows in the table</div>
-          <div style="margin: 0 -.25rem !important; overflow-x: auto;" class="px-0 py-3">
+          <div style="margin: 0 -.25rem !important; overflow-x: auto;" class="px-0 py-3 typeahead-container">
             <table class="table table-borderless table-hover" id="validators-notifications">
               <thead class="custom-table-head">
                 <tr>
@@ -251,7 +251,7 @@
 
     <!-- Modals -->
     <!-- Confirm Remove modal -->
-    <div class="modal fade" id="confirmRemoveModal" data-backdrop="static" data-keyboard="false" tabindex="-1" role="dialog" aria-labelledby="confirmRemoveLabel" aria-hidden="true">
+    <div class="modal fade" id="confirmRemoveModal" data-backdrop="static" data-keyboard="true" tabindex="-1" role="dialog" aria-labelledby="confirmRemoveLabel" aria-hidden="true">
       <div class="modal-dialog modal-dialog-centered" role="document">
         <div class="modal-content row mx-0 custom-background-color custom-remove-modal">
           <div class="mb-4 custom-remove-modal-close">
@@ -269,7 +269,7 @@
       </div>
     </div>
     <!-- Add Monitoring events modal -->
-    <div class="modal fade custom-modal" id="addMonitoringEventModal" data-backdrop="static" data-keyboard="false" tabindex="-1" role="dialog" aria-labelledby="addMonitoringEventLabel" aria-hidden="true">
+    <div class="modal fade custom-modal" id="addMonitoringEventModal" data-backdrop="static" data-keyboard="true" tabindex="-1" role="dialog" aria-labelledby="addMonitoringEventLabel" aria-hidden="true">
       <div class="modal-dialog modal-dialog-centered custom-modal-dialog" role="document">
         <div class="modal-content mx-0 custom-background-color custom-remove-modal custom-modal-content">
           <div class="mb-1 mb-sm-4 custom-remove-modal-close">

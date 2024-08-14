@@ -2,12 +2,14 @@ package handlers
 
 import (
 	"encoding/json"
-	"eth2-exporter/services"
-	"eth2-exporter/templates"
-	"eth2-exporter/types"
-	"eth2-exporter/utils"
 	"fmt"
 	"net/http"
+	"strings"
+
+	"github.com/gobitfly/eth2-beaconchain-explorer/services"
+	"github.com/gobitfly/eth2-beaconchain-explorer/templates"
+	"github.com/gobitfly/eth2-beaconchain-explorer/types"
+	"github.com/gobitfly/eth2-beaconchain-explorer/utils"
 
 	"github.com/gorilla/mux"
 )
@@ -41,11 +43,18 @@ func Charts(w http.ResponseWriter, r *http.Request) {
 		cpd = append(cpd, chartData)
 	}
 
+	disclaimer := ""
 	for _, chart := range cpd {
 		chart.Data.Series = nil
+
+		// If at least one chart shows info about ETH.STORE, then show the disclaimer
+		if disclaimer == "" && strings.Contains(chart.Data.Subtitle, "ETH.STORE®") {
+			disclaimer = services.EthStoreDisclaimer()
+		}
 	}
 
-	data.Data = cpd
+	data.Data = &types.ChartsPageData{ChartsPageDataCharts: cpd, Disclaimer: disclaimer}
+
 	if handleTemplateError(w, r, "charts.go", "Charts", "Done", chartsTemplate.ExecuteTemplate(w, "layout", data)) != nil {
 		return // an error has occurred and was processed
 	}
@@ -92,7 +101,7 @@ func GenericChart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if chartData == nil {
-		http.Error(w, "Not found", http.StatusNotFound)
+		NotFound(w, r)
 		return
 	}
 
@@ -114,7 +123,7 @@ func GenericChartData(w http.ResponseWriter, r *http.Request) {
 	chartsPageData := services.LatestChartsPageData()
 	if chartsPageData == nil {
 		utils.LogError(nil, "error getting chart page data", 0)
-		SendErrorResponse(w, r.URL.String(), "error getting chart page data")
+		SendBadRequestResponse(w, r.URL.String(), "error getting chart page data")
 		return
 	}
 
@@ -127,11 +136,11 @@ func GenericChartData(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if chartData == nil {
-		SendErrorResponse(w, r.URL.String(), fmt.Sprintf("error the chart you requested is not available. Chart: %v", chartVar))
+		SendBadRequestResponse(w, r.URL.String(), fmt.Sprintf("error the chart you requested is not available. Chart: %v", chartVar))
 		return
 	}
 
-	sendOKResponse(json.NewEncoder(w), r.URL.String(), []interface{}{chartData.Series})
+	SendOKResponse(json.NewEncoder(w), r.URL.String(), []interface{}{chartData.Series})
 }
 
 // SlotViz renders a single page with a d3 slot (block) visualisation

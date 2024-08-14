@@ -3,13 +3,14 @@ package services
 import (
 	"context"
 	"database/sql"
-	"eth2-exporter/db"
-	"eth2-exporter/utils"
 	"fmt"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gobitfly/eth2-beaconchain-explorer/db"
+	"github.com/gobitfly/eth2-beaconchain-explorer/utils"
 
 	"github.com/go-redis/redis/v8"
 )
@@ -38,10 +39,16 @@ func startClDataMonitoringService() {
 
 		// retrieve the max attestationslot from the validators table and check that it is not older than 15 minutes
 		var maxAttestationSlot uint64
-		err := db.WriterDb.Get(&maxAttestationSlot, "SELECT MAX(lastattestationslot) FROM validators;")
+		lastAttestationSlots, err := db.BigtableClient.GetLastAttestationSlots([]uint64{})
 		if err != nil {
-			logger.Errorf("error retrieving max attestation slot from validators table: %v", err)
+			logger.Errorf("error retrieving max attestation slot data from bigtable: %v", err)
 			continue
+		}
+
+		for _, lastAttestationSlot := range lastAttestationSlots {
+			if lastAttestationSlot > maxAttestationSlot {
+				maxAttestationSlot = lastAttestationSlot
+			}
 		}
 
 		if time.Since(utils.SlotToTime(maxAttestationSlot)) > time.Minute*15 {
@@ -104,7 +111,7 @@ func startElDataMonitoringService() {
 		}
 		blockBlocksTable, err := db.BigtableClient.GetBlockFromBlocksTable(uint64(numberBlocksTable))
 		if err != nil {
-			errorMsg := fmt.Errorf("error: could not retrieve latest block from the blocks table: %v", err)
+			errorMsg := fmt.Errorf("error: could not retrieve latest block (%d) from the blocks table: %v", numberBlocksTable, err)
 			ReportStatus(name, errorMsg.Error(), nil)
 			continue
 		}
@@ -167,24 +174,28 @@ func startApiMonitoringService() {
 		Timeout: time.Second * 10,
 	}
 
+	url := "https://" + utils.Config.Frontend.SiteDomain + "/api/v1/epoch/latest"
+	// add apikey (if any) to url but don't log the api key when errors occur
+	errFields := map[string]interface{}{
+		"url": url}
+	url += "?apikey=" + utils.Config.Monitoring.ApiKey
+
 	for {
 		if !firstRun {
 			time.Sleep(time.Minute)
 		}
 		firstRun = false
 
-		url := "https://" + utils.Config.Frontend.SiteDomain + "/api/v1/epoch/latest"
 		resp, err := client.Get(url)
-
 		if err != nil {
-			utils.LogError(err, "getting client error", 0)
-			ReportStatus(name, err.Error(), nil)
+			utils.LogError(err, "getting client error", 0, errFields)
+			ReportStatus(name, strings.ReplaceAll(err.Error(), utils.Config.Monitoring.ApiKey, ""), nil)
 			continue
 		}
 
 		if resp.StatusCode != 200 {
 			errorMsg := fmt.Errorf("error: api epoch / latest endpoint returned a non 200 status: %v", resp.StatusCode)
-			utils.LogError(nil, errorMsg, 0)
+			utils.LogError(nil, errorMsg, 0, errFields)
 			ReportStatus(name, errorMsg.Error(), nil)
 			continue
 		}
@@ -202,24 +213,28 @@ func startAppMonitoringService() {
 		Timeout: time.Second * 10,
 	}
 
+	url := "https://" + utils.Config.Frontend.SiteDomain + "/api/v1/app/dashboard"
+	// add apikey (if any) to url but don't log the api key when errors occur
+	errFields := map[string]interface{}{
+		"url": url}
+	url += "?apikey=" + utils.Config.Monitoring.ApiKey
+
 	for {
 		if !firstRun {
 			time.Sleep(time.Minute)
 		}
 		firstRun = false
 
-		url := "https://" + utils.Config.Frontend.SiteDomain + "/api/v1/app/dashboard"
 		resp, err := client.Post(url, "application/json", strings.NewReader(`{"indicesOrPubkey": "1,2"}`))
-
 		if err != nil {
-			utils.LogError(err, "POST to dashboard URL error", 0)
-			ReportStatus(name, err.Error(), nil)
+			utils.LogError(err, "POST to dashboard URL error", 0, errFields)
+			ReportStatus(name, strings.ReplaceAll(err.Error(), utils.Config.Monitoring.ApiKey, ""), nil)
 			continue
 		}
 
 		if resp.StatusCode != 200 {
 			errorMsg := fmt.Errorf("error: api app endpoint returned a non 200 status: %v", resp.StatusCode)
-			utils.LogError(nil, errorMsg, 0)
+			utils.LogError(nil, errorMsg, 0, errFields)
 			ReportStatus(name, errorMsg.Error(), nil)
 			continue
 		}
@@ -243,15 +258,29 @@ func startServicesMonitoringService() {
 		"mempoolUpdater":            time.Minute * 15,
 		"indexPageDataUpdater":      time.Minute * 15,
 		"latestBlockUpdater":        time.Minute * 15,
+		"headBlockRootHashUpdater":  time.Minute * 15,
 		"notification-collector":    time.Minute * 15,
+		"relaysUpdater":             time.Minute * 15,
+		"ethstoreExporter":          time.Minute * 60,
+		"statsUpdater":              time.Minute * 30,
+		"poolsUpdater":              time.Minute * 30,
+		"slotExporter":              time.Minute * 15,
+		"statistics":                time.Minute * 90,
+		"ethStoreStatistics":        time.Minute * 15,
+		"lastExportedStatisticDay":  time.Minute * 15,
 		//"notification-sender", //exclude for now as the sender is only running on mainnet
-		"relaysUpdater":    time.Minute * 15,
-		"ethstoreExporter": time.Minute * 30,
-		"statsUpdater":     time.Minute * 30,
-		"poolsUpdater":     time.Minute * 30,
-		"epochExporter":    time.Minute * 15,
-		"statistics":       time.Minute * 15,
-		//"poolInfoUpdater":  time.Minute * 30,
+	}
+
+	if utils.Config.Monitoring.ServiceMonitoringConfigurations != nil {
+		for _, service := range utils.Config.Monitoring.ServiceMonitoringConfigurations {
+			if service.Duration == 0 {
+				delete(servicesToCheck, service.Name)
+				logger.Infof("Removing %v from monitoring service", service.Name)
+			} else {
+				servicesToCheck[service.Name] = service.Duration
+				logger.Infof("Change timeout for %v to %v", service.Name, service.Duration)
+			}
+		}
 	}
 
 	for {

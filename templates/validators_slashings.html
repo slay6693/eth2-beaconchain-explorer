@@ -1,16 +1,25 @@
 {{ define "js" }}
   <script type="text/javascript" src="/js/datatables.min.js"></script>
   <script type="text/javascript" src="/js/datatable_input.js"></script>
+  <script type="text/javascript" src="/js/datatable_loader.js"></script>
   <script>
     $("#slashings").DataTable({
       processing: true,
+      searchDelay: 0,
       serverSide: true,
       ordering: false,
       searching: false,
       stateSave: true,
+      stateSaveCallback: function (settings, data) {
+        data.start = 0
+        localStorage.setItem("DataTables_" + settings.sInstance, JSON.stringify(data))
+      },
+      stateLoadCallback: function (settings) {
+        return JSON.parse(localStorage.getItem("DataTables_" + settings.sInstance))
+      },
       paging: true,
       pagingType: "input",
-      ajax: "/validators/slashings/data",
+      ajax: dataTableLoader("/validators/slashings/data"),
       language: {
         // searchPlaceholder: 'Search by Epoch Number',
         // search: '',

@@ -3,11 +3,12 @@ package db
 import (
 	"database/sql"
 	"encoding/hex"
-	"eth2-exporter/types"
-	"eth2-exporter/utils"
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/gobitfly/eth2-beaconchain-explorer/types"
+	"github.com/gobitfly/eth2-beaconchain-explorer/utils"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
@@ -73,6 +74,38 @@ func RemoveFromWatchlist(userId uint64, validator_publickey string, network stri
 	_, err = tx.Exec("DELETE FROM users_validators_tags WHERE user_id = $1 and validator_publickey = $2 and tag = $3", userId, key, tag)
 	if err != nil {
 		return fmt.Errorf("error deleting validator from watchlist: %v", err)
+	}
+
+	err = tx.Commit()
+
+	return err
+}
+
+func RemoveFromWatchlistBatch(userId uint64, validator_publickeys []string, network string) error {
+	keys := [][]byte{}
+	for _, keyString := range validator_publickeys {
+		key, err := hex.DecodeString(keyString)
+		if err != nil {
+			return err
+		}
+		keys = append(keys, key)
+	}
+	tx, err := FrontendWriterDB.Begin()
+	if err != nil {
+		return fmt.Errorf("error starting db transactions: %w", err)
+	}
+	defer tx.Rollback()
+
+	_, err = tx.Exec("DELETE FROM users_subscriptions WHERE user_id = $1 AND event_filter = ANY($2) AND event_name LIKE ($3 || '%')", userId, pq.StringArray(validator_publickeys), network+":")
+	if err != nil {
+		return fmt.Errorf("error deleting subscriptions for validator: %w", err)
+	}
+
+	tag := network + ":" + string(types.ValidatorTagsWatchlist)
+
+	_, err = tx.Exec("DELETE FROM users_validators_tags WHERE user_id = $1 AND validator_publickey = ANY($2) AND tag = $3", userId, pq.ByteaArray(keys), tag)
+	if err != nil {
+		return fmt.Errorf("error deleting validator from watchlist: %w", err)
 	}
 
 	err = tx.Commit()
@@ -238,7 +271,7 @@ func UpdateSubscriptionLastSent(tx *sqlx.Tx, ts uint64, epoch uint64, subID uint
 
 // CountSentMail increases the count of sent mails in the table `mails_sent` for this day.
 func CountSentMail(email string) error {
-	day := time.Now().Truncate(time.Hour * 24).Unix()
+	day := time.Now().Truncate(utils.Day).Unix()
 	_, err := FrontendWriterDB.Exec(`
 		INSERT INTO mails_sent (email, ts, cnt) VALUES ($1, TO_TIMESTAMP($2), 1)
 		ON CONFLICT (email, ts) DO UPDATE SET cnt = mails_sent.cnt+1`, email, day)
@@ -247,7 +280,7 @@ func CountSentMail(email string) error {
 
 // GetMailsSentCount returns the number of sent mails for the day of the passed time.
 func GetMailsSentCount(email string, t time.Time) (int, error) {
-	day := t.Truncate(time.Hour * 24).Unix()
+	day := t.Truncate(utils.Day).Unix()
 	count := 0
 	err := FrontendWriterDB.Get(&count, "SELECT cnt FROM mails_sent WHERE email = $1 AND ts = TO_TIMESTAMP($2)", email, day)
 	if err == sql.ErrNoRows {

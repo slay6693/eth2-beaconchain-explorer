@@ -1,11 +1,12 @@
 package utils
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -122,8 +123,14 @@ func accessTokenGetClaims(tokenStringFull string, validate bool) (*CustomClaims,
 	})
 
 	if err != nil && validate {
-		if !strings.Contains(err.Error(), "token is expired") {
-			logger.Warnf("Error parsing jwt token: %v %v", err, token)
+		if !strings.Contains(err.Error(), "token is expired") && token != nil {
+			logger.WithFields(
+				logrus.Fields{
+					"error":       err,
+					"token":       token,
+					"tokenString": tokenString,
+				},
+			).Warn("Error parsing jwt token")
 		}
 
 		return nil, err
@@ -235,13 +242,14 @@ func AuthorizedAPIMiddleware(next http.Handler) http.Handler {
 		// as context to the request. By doing this here,
 		// we can use base.FormValueOrJson(key) without multiple parsings of the same body
 		if r.Method == "POST" && r.Header.Get("Content-Type") == "application/json" {
-			body, err := ioutil.ReadAll(r.Body)
+			body, err := io.ReadAll(r.Body)
 			if err == nil {
 				keyVal := make(map[string]interface{})
 				json.Unmarshal(body, &keyVal)
 				context.Set(r, JsonBodyKey, keyVal)
 				context.Set(r, JsonBodyNakedKey, body)
 			}
+			r.Body = io.NopCloser(bytes.NewReader(body))
 		}
 
 		context.Set(r, ClaimsContextKey, claims)

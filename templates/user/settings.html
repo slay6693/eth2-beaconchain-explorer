@@ -20,7 +20,7 @@
         },
         {
             id: 'lighthouse-graffiti',
-            config: "--monitoring-endpoint https://beaconcha.in/api/v1/client/metrics?apikey={apiKey}{machineName}"
+            config: "--monitoring-endpoint 'https://beaconcha.in/api/v1/client/metrics?apikey={apiKey}{machineName}'"
         },
         {
             id: 'nimbus-graffiti',
@@ -28,11 +28,11 @@
         },
         {
             id: 'teku-graffiti',
-            config: "--metrics-publish-endpoint https://beaconcha.in/api/v1/client/metrics?apikey={apiKey}{machineName}"
+            config: "--metrics-publish-endpoint 'https://beaconcha.in/api/v1/client/metrics?apikey={apiKey}{machineName}'"
         },
         {
             id: 'lodestar-graffiti',
-            config: "--monitoring.endpoint 'https://beaconcha.in/api/v1/client/metrics?apikey={apiKey}{machineName}' --metrics"
+            config: "--monitoring.endpoint 'https://beaconcha.in/api/v1/client/metrics?apikey={apiKey}{machineName}'"
         }
     ]
 
@@ -282,6 +282,7 @@
             console.log(err)
         })
     }
+    activateTabbarSwitcher("dashTabContent", "dashChartTabs", "account")
 </script>
 {{ end }}
 
@@ -336,12 +337,12 @@
             </ul>
 
             <div class="tab-content h-100" id="dashTabContent">
-              <div id="account" class="tab-pane fade h-100 show active" role="tabpanel" aria-labelledby="account-tab">
+              <div id="accountTabPanel" class="tab-pane fade h-100" role="tabpanel" aria-labelledby="account-tab">
                 <!-- Upgrade to premium -->
                 <div class="card my-3">
                   <div class="card-header justify-content-between d-flex align-items-center">
                     <h3 class="h5">
-                      <span>Beaconcha.in Premium</span> <span class="mx-1">|</span>
+                      <span>beaconcha.in Premium</span> <span class="mx-1">|</span>
                       <span style="font-size: 80%;" class="font-weight-light">
                         {{ if not .Premium.Active }}
                           Free Tier
@@ -353,8 +354,21 @@
                             {{ if eq .Premium.Package "goldfish" }}
                               <strong style="color: #d89a3e; font-size: 1.1em">Goldfish </strong>
                             {{ else }}
-                              {{ if eq .Premium.Package "whale" }}<strong style="color: #44a1c5; font-size: 1.1em">Whale </strong>{{ end }}
-
+                              {{ if eq .Premium.Package "whale" }}
+                                <strong style="color: #44a1c5; font-size: 1.1em">Whale </strong>
+                              {{ else }}
+                                {{ if or (eq .Premium.Package "guppy") (eq .Premium.Package "guppy.yearly") }}
+                                  <strong style="color: #50c878; font-size: 1.1em">Guppy {{ if eq .Premium.Package "guppy.yearly" }}(yearly){{ end }} </strong>
+                                {{ else }}
+                                  {{ if or (eq .Premium.Package "dolphin") (eq .Premium.Package "dolphin.yearly") }}
+                                    <strong style="color: #d89a3e; font-size: 1.1em">Dolphin {{ if eq .Premium.Package "dolphin.yearly" }}(yearly){{ end }} </strong>
+                                  {{ else }}
+                                    {{ if or (eq .Premium.Package "orca") (eq .Premium.Package "orca.yearly") }}
+                                      <strong style="color: #44a1c5; font-size: 1.1em">Orca {{ if eq .Premium.Package "orca.yearly" }}(yearly){{ end }} </strong>
+                                    {{ end }}
+                                  {{ end }}
+                                {{ end }}
+                              {{ end }}
                             {{ end }}
                           {{ end }}
                         {{ end }}
@@ -401,14 +415,14 @@
                     <form id="email-form" action="settings/email" method="POST">
                       {{ .CsrfField }}
                       <div class="form-group">
-                        <label for="email">Email address</label>
-                        <div class="input-group">
-                          <input value="{{ .Subscription.Email }}" disabled inputmode="email" type="text" maxlength="100" class="form-control" autocomplete="email" id="email" name="email" />
-                          <div class="input-group-append">
-                            <button id="email-edit-button" onclick="toggleButton(this)" type="button" class="btn btn-outline-primary">Edit</button>
-                          </div>
-                        </div>
+                        <label for="current-password">Confirm Current Password</label>
+                        <input required type="password" minlength="5" maxlength="256" class="form-control" autocomplete="current-password" id="current-password" name="current-password" />
                       </div>
+                      <div class="form-group">
+                        <label for="email">New Email Address</label>
+                        <input required value="{{ .Subscription.Email }}" inputmode="email" type="text" maxlength="100" class="form-control" autocomplete="email" id="email" name="email" />
+                      </div>
+                      <button type="submit" class="btn btn-outline-primary float-right">Change Email</button>
                     </form>
                   </div>
                 </div>
@@ -454,7 +468,7 @@
                 </div>
               </div>
 
-              <div id="app" class="tab-pane fade h-100" role="tabpanel" aria-labelledby="app-tab">
+              <div id="appTabPanel" class="tab-pane fade h-100" role="tabpanel" aria-labelledby="app-tab">
                 <!-- Monitoring Helper -->
                 <div class="card my-3">
                   <div class="card-header">
@@ -485,10 +499,10 @@
                       <h4>Select your Client</h4>
                       <div class="accordion" id="accordionExample" style="padding-top: 7px;">
                         <div class="card" style="box-shadow: none; ">
-                          <h2 class="card-header" id="headingOne">
+                          <h2 class="card-header" id="headingLighthouse">
                             <button class="btn btn-link btn-block text-left" type="button" data-toggle="collapse" data-target="#collapseLighthouse" aria-expanded="true" aria-controls="collapseLighthouse">Lighthouse Setup Guide</button>
                           </h2>
-                          <div id="collapseLighthouse" class="collapse" aria-labelledby="headingOne" data-parent="#accordionExample" style="margin: 15px;">
+                          <div id="collapseLighthouse" class="collapse" aria-labelledby="headingLighthouse" data-parent="#accordionExample" style="margin: 15px;">
                             <div class="accordion-body">
                               Copy & Paste the following flags to your Lighthouse validator <strong>and</strong> beaconnode:<br /><br />
 
@@ -508,10 +522,10 @@
                           </div>
                         </div>
                         <div class="card" style="box-shadow: none;">
-                          <h2 class="card-header" id="headingTwo">
+                          <h2 class="card-header" id="headingPrysm">
                             <button class="btn btn-link btn-block text-left" type="button" data-toggle="collapse" data-target="#collapsePrysm" aria-expanded="false" aria-controls="collapsePrysm">Prysm Setup Guide</button>
                           </h2>
-                          <div id="collapsePrysm" class="collapse" aria-labelledby="headingTwo" data-parent="#accordionExample" style="margin: 15px;">
+                          <div id="collapsePrysm" class="collapse" aria-labelledby="headingPrysm" data-parent="#accordionExample" style="margin: 15px;">
                             <div class="accordion-body">
                               <h4>1. Install Metric Exporter</h4>
                               Download the latest beaconcha.in metrics exporter on your machine:<br /><br />
@@ -530,6 +544,9 @@
                               </div>
 
                               <div style="clear: both;"></div>
+                              <br />
+                              Docker is also available, for more information click <a href="https://github.com/gobitfly/eth2-client-metrics-exporter#example-with-docker"> here</a>!
+                              <br />
                               <br />
 
                               <h4>2. Run Metrics Exporter</h4>
@@ -550,10 +567,10 @@
                           </div>
                         </div>
                         <div class="card" style="box-shadow: none;">
-                          <h2 class="card-header" id="headingThree">
+                          <h2 class="card-header" id="headingNimbus">
                             <button class="btn btn-link btn-block text-left" type="button" data-toggle="collapse" data-target="#collapseNimbus" aria-expanded="false" aria-controls="collapseNimbus">Nimbus Setup Guide</button>
                           </h2>
-                          <div id="collapseNimbus" class="collapse" aria-labelledby="headingThree" data-parent="#accordionExample" style="margin: 15px;">
+                          <div id="collapseNimbus" class="collapse" aria-labelledby="headingNimbus" data-parent="#accordionExample" style="margin: 15px;">
                             <div class="accordion-body">
                               <h4>1. Run Nimbus Client</h4>
                               Copy & Paste the following flags to your Nimbus node:<br /><br />
@@ -589,6 +606,9 @@
 
                               <div style="clear: both;"></div>
                               <br />
+                              Docker is also available, for more information click <a href="https://github.com/gobitfly/eth2-client-metrics-exporter#example-with-docker"> here</a>!
+                              <br />
+                              <br />
 
                               <h4>3. Run Metrics Exporter</h4>
                               <div style="margin-left: 5px; margin-right: 5px;">
@@ -608,10 +628,10 @@
                           </div>
                         </div>
                         <div class="card" style="box-shadow: none;">
-                          <h2 class="card-header" id="headingFour">
+                          <h2 class="card-header" id="headingTeku">
                             <button class="btn btn-link btn-block text-left" type="button" data-toggle="collapse" data-target="#collapseTeku" aria-expanded="false" aria-controls="collapseTeku">Teku Setup Guide</button>
                           </h2>
-                          <div id="collapseTeku" class="collapse" aria-labelledby="headingFour" data-parent="#accordionExample" style="margin: 15px;">
+                          <div id="collapseTeku" class="collapse" aria-labelledby="headingTeku" data-parent="#accordionExample" style="margin: 15px;">
                             <div class="accordion-body">
                               Copy & Paste the following flags to your Teku validator client:<br /><br />
 
@@ -631,12 +651,12 @@
                           </div>
                         </div>
                         <div class="card" style="box-shadow: none; ">
-                          <h2 class="card-header" id="headingOne">
+                          <h2 class="card-header" id="headingLodestar">
                             <button class="btn btn-link btn-block text-left" type="button" data-toggle="collapse" data-target="#collapseLodestar" aria-expanded="true" aria-controls="collapseLodestar">Lodestar Setup Guide</button>
                           </h2>
-                          <div id="collapseLodestar" class="collapse" aria-labelledby="headingOne" data-parent="#accordionExample" style="margin: 15px;">
+                          <div id="collapseLodestar" class="collapse" aria-labelledby="headingLodestar" data-parent="#accordionExample" style="margin: 15px;">
                             <div class="accordion-body">
-                              Copy & Paste the following flags to your Lodestar validator <strong>and</strong> beaconnode:<br /><br />
+                              Copy & Paste the following flag to your Lodestar validator <strong>and</strong> beaconnode:<br /><br />
 
                               <div style="margin-left: 5px; margin-right: 5px;">
                                 <div style="float: left;  width: 90%;">
@@ -750,8 +770,7 @@
                               Grant account access (required)
                             </span>
                             <br /><br />
-                            <span>Paired:</span><i> {{ formatTimestampTs $value.CreatedAt }}</i>
-
+                            <span>Paired:</span><i> {{ formatTimestamp $value.CreatedAt.Unix }}</i>
                             {{ if lt $key $lastPairedElement }}
                               <hr style="width: 98%; margin-top:28px;margin-bottom:28px;" />
                             {{ end }}
@@ -763,7 +782,7 @@
                 {{ end }}
               </div>
 
-              <div id="api" class="tab-pane fade h-100" role="tabpanel" aria-labelledby="api-tab">
+              <div id="apiTabPanel" class="tab-pane fade h-100" role="tabpanel" aria-labelledby="api-tab">
                 <!-- User Api Key -->
                 <div class="card my-3">
                   <div class="card-header justify-content-between d-flex align-items-center">
@@ -781,7 +800,6 @@
                               Emerald <i style="color: #50c878;" class="fas fa-gem"></i>
                             {{ else }}
                               {{ if eqsp .Subscription.PriceID .Diamond }}Diamond <i style="color: #b9f2ff" class="fas fa-gem"></i>{{ end }}
-
                             {{ end }}
                           {{ end }}
                         {{ end }}

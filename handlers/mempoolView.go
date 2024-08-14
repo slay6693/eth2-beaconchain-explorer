@@ -1,12 +1,13 @@
 package handlers
 
 import (
-	"eth2-exporter/services"
-	"eth2-exporter/templates"
-	"eth2-exporter/types"
-	"eth2-exporter/utils"
 	"math/big"
 	"net/http"
+
+	"github.com/gobitfly/eth2-beaconchain-explorer/services"
+	"github.com/gobitfly/eth2-beaconchain-explorer/templates"
+	"github.com/gobitfly/eth2-beaconchain-explorer/types"
+	"github.com/gobitfly/eth2-beaconchain-explorer/utils"
 
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -33,7 +34,7 @@ func _isContractCreation(tx *common.Address) string {
 	if tx == nil {
 		return "Contract Creation"
 	}
-	return string(utils.FormatAddressAll(tx.Bytes(), "", false, "address", "", int(12), int(12), true))
+	return string(utils.FormatAddressAll(tx.Bytes(), "", false, "address", int(12), int(12), true))
 }
 
 // This Function formats each Transaction into Html string.
@@ -41,20 +42,34 @@ func _isContractCreation(tx *common.Address) string {
 func formatToTable(content *types.RawMempoolResponse) *types.DataTableResponse {
 	dataTable := &types.DataTableResponse{}
 
-	for _, pendingData := range content.Pending {
-		for _, tx := range pendingData {
-			dataTable.Data = append(dataTable.Data, []any{
-				utils.FormatAddressWithLimits(tx.Hash.Bytes(), "", false, "tx", 15, 18, true),
-				utils.FormatAddressAll(tx.From.Bytes(), "", false, "address", "", int(12), int(12), true),
-				_isContractCreation(tx.To),
-				utils.FormatAmount((*big.Int)(tx.Value), "ETH", 5),
-				utils.FormatAddCommasFormated(float64(tx.Gas.ToInt().Int64()), 0),
-				utils.FormatAmountFormated(tx.GasPrice.ToInt(), "GWei", 5, 0, true, true, false),
-				tx.Nonce.ToInt(),
-			})
+	for _, txs := range content.Pending {
+		for _, tx := range txs {
+			dataTable.Data = append(dataTable.Data, toTableDataRow(tx))
+		}
+	}
+	for _, txs := range content.BaseFee {
+		for _, tx := range txs {
+			dataTable.Data = append(dataTable.Data, toTableDataRow(tx))
+		}
+	}
+	for _, txs := range content.Queued {
+		for _, tx := range txs {
+			dataTable.Data = append(dataTable.Data, toTableDataRow(tx))
 		}
 	}
 	return dataTable
+}
+
+func toTableDataRow(tx *types.RawMempoolTransaction) []interface{} {
+	return []any{
+		utils.FormatAddressWithLimits(tx.Hash.Bytes(), "", false, "tx", 15, 18, true),
+		utils.FormatAddressAll(tx.From.Bytes(), "", false, "address", int(12), int(12), true),
+		_isContractCreation(tx.To),
+		utils.FormatAmount((*big.Int)(tx.Value), utils.Config.Frontend.ElCurrency, 5),
+		utils.FormatAddCommasFormatted(float64(tx.Gas.ToInt().Int64()), 0),
+		utils.FormatAmountFormatted(tx.GasPrice.ToInt(), "GWei", 5, 0, true, true, false),
+		tx.Nonce.ToInt(),
+	}
 }
 
 // type formatedTx struct {

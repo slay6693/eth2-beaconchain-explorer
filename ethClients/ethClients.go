@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gobitfly/eth2-beaconchain-explorer/utils"
+
 	"github.com/sirupsen/logrus"
 )
 
@@ -47,7 +49,7 @@ type clientUpdateInfo struct {
 
 type EthClients struct {
 	ClientReleaseVersion string
-	ClientReleaseDate    string
+	ClientReleaseDate    template.HTML
 	NetworkShare         string
 	IsUserSubscribed     bool
 }
@@ -62,6 +64,7 @@ type EthClientServicesPageData struct {
 	Nimbus              EthClients
 	Lighthouse          EthClients
 	Erigon              EthClients
+	Reth                EthClients
 	RocketpoolSmartnode EthClients
 	MevBoost            EthClients
 	Lodestar            EthClients
@@ -74,6 +77,8 @@ var ethClientsMux = &sync.RWMutex{}
 var bannerClients = []clientUpdateInfo{}
 var bannerClientsMux = &sync.RWMutex{}
 
+var httpClient = &http.Client{Timeout: time.Second * 10}
+
 // Init starts a go routine to update the ETH Clients Info
 func Init() {
 	go update()
@@ -81,8 +86,12 @@ func Init() {
 
 func fetchClientData(repo string) *gitAPIResponse {
 	var gitAPI = new(gitAPIResponse)
-	resp, err := http.Get("https://api.github.com/repos" + repo + "/releases/latest")
-	// resp, err := http.Get("http://localhost:5000/repos" + repo)
+
+	githubAPIHost := utils.Config.GithubApiHost
+	if githubAPIHost == "" {
+		githubAPIHost = "api.github.com"
+	}
+	resp, err := httpClient.Get(fmt.Sprintf("https://%s/repos%s/releases/latest", githubAPIHost, repo))
 
 	if err != nil {
 		logger.Errorf("error retrieving ETH Client Data: %v", err)
@@ -90,6 +99,11 @@ func fetchClientData(repo string) *gitAPIResponse {
 	}
 
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		logger.Errorf("error retrieving ETH Client Data, status code: %v", resp.StatusCode)
+		return nil
+	}
 
 	err = json.NewDecoder(resp.Body).Decode(&gitAPI)
 
@@ -153,18 +167,10 @@ func getRepoTime(date string, dTime string) (time.Time, error) {
 	return time.Date(int(year), time.Month(int(month)), int(day), int(hour), int(min), 0, 0, time.UTC), nil
 }
 
-func ymdTodmy(date string) string {
-	dateDays := strings.Split(date, "-")
-	if len(dateDays) < 3 {
-		logger.Errorf("error wrong date string %s", date)
-		return ""
-	}
-	return fmt.Sprintf("%s-%s-%s", dateDays[2], dateDays[1], dateDays[0])
-}
-
-func prepareEthClientData(repo string, name string, curTime time.Time) (string, string) {
-
+func prepareEthClientData(repo string, name string, curTime time.Time) (string, template.HTML) {
 	client := fetchClientData(repo)
+	time.Sleep(time.Millisecond * 250) // consider github rate limit
+
 	if client == nil {
 		return "Github", "searching"
 	}
@@ -177,21 +183,12 @@ func prepareEthClientData(repo string, name string, curTime time.Time) (string, 
 			return client.Name, "GitHub" // client.Name is client version from github api
 		}
 		timeDiff := (curTime.Sub(rTime).Hours() / 24.0)
-		if timeDiff < 1.0 { // show banner if update was less than 2 days ago
+
+		if timeDiff < 1 { // add recent releases for notification collector to be collected
 			update := clientUpdateInfo{Name: name, Date: rTime}
 			bannerClients = append(bannerClients, update)
-			return client.Name, "Recently"
 		}
-
-		if timeDiff <= 1.5 && timeDiff >= 1.0 {
-			return client.Name, "1 day ago"
-		}
-
-		if timeDiff > 30 {
-			return client.Name, fmt.Sprintf("On %s", ymdTodmy(date[0]))
-		}
-
-		return client.Name, fmt.Sprintf("%.0f days ago", timeDiff) // can sub. -0.5 to round down the days but github is rounding up
+		return client.Name, utils.FormatTimestamp(rTime.Unix())
 	}
 	return "Github", "searching" // If API limit is exceeded
 }
@@ -214,6 +211,8 @@ func updateEthClientNetShare() {
 			ethClients.Besu.NetworkShare = share
 		case "erigon":
 			ethClients.Erigon.NetworkShare = share
+		case "reth":
+			ethClients.Reth.NetworkShare = share
 		default:
 			continue
 		}
@@ -238,7 +237,8 @@ func updateEthClient() {
 	ethClients.Geth.ClientReleaseVersion, ethClients.Geth.ClientReleaseDate = prepareEthClientData("/ethereum/go-ethereum", "Geth", curTime)
 	ethClients.Nethermind.ClientReleaseVersion, ethClients.Nethermind.ClientReleaseDate = prepareEthClientData("/NethermindEth/nethermind", "Nethermind", curTime)
 	ethClients.Besu.ClientReleaseVersion, ethClients.Besu.ClientReleaseDate = prepareEthClientData("/hyperledger/besu", "Besu", curTime)
-	ethClients.Erigon.ClientReleaseVersion, ethClients.Erigon.ClientReleaseDate = prepareEthClientData("/ledgerwatch/erigon", "Erigon", curTime)
+	ethClients.Erigon.ClientReleaseVersion, ethClients.Erigon.ClientReleaseDate = prepareEthClientData("/erigontech/erigon", "Erigon", curTime)
+	ethClients.Reth.ClientReleaseVersion, ethClients.Reth.ClientReleaseDate = prepareEthClientData("/paradigmxyz/reth", "Reth", curTime)
 
 	ethClients.Teku.ClientReleaseVersion, ethClients.Teku.ClientReleaseDate = prepareEthClientData("/ConsenSys/teku", "Teku", curTime)
 	ethClients.Prysm.ClientReleaseVersion, ethClients.Prysm.ClientReleaseDate = prepareEthClientData("/prysmaticlabs/prysm", "Prysm", curTime)
@@ -264,13 +264,6 @@ func GetEthClientData() EthClientServicesPageData {
 	ethClientsMux.Lock()
 	defer ethClientsMux.Unlock()
 	return ethClients
-}
-
-// ClientsUpdated returns a boolean indicating if clients are updated
-func ClientsUpdated() bool {
-	bannerClientsMux.Lock()
-	defer bannerClientsMux.Unlock()
-	return len(bannerClients) != 0
 }
 
 // GetUpdatedClients returns a slice of latest updated clients or empty slice if no updates

@@ -1,5 +1,5 @@
 {{ define "validatorLifeCycleDiagram" }}
-  {{ $deposited := or (or (eq .Status "deposited") (eq .Status "deposited_valid")) (eq .Status "deposited_invalid") }}
+  {{ $deposited := or (eq .Status "deposited") (eq .Status "deposited_invalid") }}
 
 
   <div class="validator__lifecycle-container">
@@ -17,7 +17,7 @@
       </div>
       <div class="validator__lifecycle-progress validator__lifecycle-deposited text-white">
         <div class="validator__lifecycle-progress-epoch">
-          {{ if not $deposited }}<div data-toggle="tooltip" title="The eligible epoch is when your validator is registered by the beacon chain and joins the queue to be activated."><a href="/epoch/{{ .ActivationEligibilityEpoch }}">{{ if eq .ActivationEligibilityEpoch 0 }}genesis{{ else }}{{ .ActivationEligibilityEpoch }}{{ end }}</a></div>{{ end }}
+          {{ if and (not $deposited) ( ne .ActivationEligibilityEpoch 9223372036854775807) }}<div data-toggle="tooltip" data-html="true" title="<span>The eligible epoch is when your validator is registered by the beacon chain and joins the queue to be activated.</span><br><span aria-ethereum-date='{{ .ActivationEligibilityTs.Unix }}'></span>"><a href="/epoch/{{ .ActivationEligibilityEpoch }}">{{ if eq .ActivationEligibilityEpoch 0 }}genesis{{ else }}{{ .ActivationEligibilityEpoch }}{{ end }}</a></div>{{ end }}
         </div>
       </div>
       <div id="lifecycle-pending" class="validator__lifecycle-node-container validator__lifecycle-pending">
@@ -35,7 +35,11 @@
       </div>
       <div class="validator__lifecycle-progress validator__lifecycle-pending">
         <div class="validator__lifecycle-progress-epoch">
-          {{ if not $deposited }}<div data-toggle="tooltip" title="The activation epoch is when your validator becomes active.">{{ if ne .ActivationEpoch 9223372036854775807 }}<a href="/epoch/{{ .ActivationEpoch }}">{{ if eq .ActivationEpoch 0 }}genesis{{ else }}{{ .ActivationEpoch }}{{ end }}</a>{{ end }}</div>{{ end }}
+          {{ if and (not $deposited) (ne .ActivationEpoch 9223372036854775807) }}
+            <div data-toggle="tooltip" data-html="true" title="<span>The activation epoch is when your validator becomes active.</span><br><span aria-ethereum-date='{{ .ActivationTs.Unix }}'></span> ">
+              <a href="/epoch/{{ .ActivationEpoch }}">{{ if eq .ActivationEpoch 0 }}genesis{{ else }}{{ .ActivationEpoch }}{{ end }}</a>
+            </div>
+          {{ end }}
         </div>
       </div>
       <div id="lifecycle-active" class="validator__lifecycle-node-container validator__lifecycle-active">
@@ -54,7 +58,7 @@
       </div>
       <div class="validator__lifecycle-progress validator__lifecycle-active">
         <div class="validator__lifecycle-progress-epoch">
-          {{ if not (or (eq .ExitEpoch 9223372036854775807) (eq .ExitEpoch 0)) }}<div data-toggle="tooltip" title="The exit epoch is when your validator will leave the network"><a href="/epoch/{{ .ExitEpoch }}">{{ .ExitEpoch }}</a></div>{{ end }}
+          {{ if not (or (eq .ExitEpoch 9223372036854775807) (eq .ExitEpoch 0)) }}<div data-toggle="tooltip" data-html="true" title="<span>The exit epoch is when your validator will leave the network</span><br><span aria-ethereum-date='{{ .ExitTs.Unix }}'></span>"><a href="/epoch/{{ .ExitEpoch }}">{{ .ExitEpoch }}</a></div>{{ end }}
         </div>
       </div>
       <div id="lifecycle-exited" class="validator__lifecycle-node-container validator__lifecycle-exited">
@@ -74,30 +78,32 @@
 {{ end }}
 
 {{ define "validatorOverviewDeposited" }}
-  <div class="text-justify row justify-content-center mb-2">
-    <div class="col">
-      <div class="px-2">
-        <div class="px-2 mx-auto" style="max-width: 50rem;">
-          <span>
-            {{ if eq .InclusionDelay 0 }}
-              An ETH deposit has been made, and your validator will be voted into the activation queue once the deposited amount sums up to 32 ETH.
-            {{ else }}
-              <!-- The last ETH deposit was made  {{ if gt .Deposits.LastEth1DepositTs 0 }}<span aria-ethereum-date-format="FROMNOW" aria-ethereum-date="{{ .Deposits.LastEth1DepositTs }}"></span>{{ end }}, it will take <a href="https://kb.beaconcha.in/ethereum-2.0-and-depositing-process">around {{ .InclusionDelay }} hours</a>  until your deposit is processed by the beacon chain. This validator will be eligible for activation once the deposited amount sums up to 32 ETH. 
-                            -->
-              The last deposit to the Ethereum Deposit contract was made {{ if gt .Deposits.LastEth1DepositTs 0 }}<span aria-ethereum-date-format="FROMNOW" aria-ethereum-date="{{ .Deposits.LastEth1DepositTs }}"></span>{{ end }}, it will take <a href="https://kb.beaconcha.in/ethereum-2.0-and-depositing-process">around 16-24 hours</a> until your deposit is processed by the beacon chain. This validator will be eligible for activation once the deposited amount sums up to 32 ETH.
+  {{ with .Data }}
+    <div class="text-justify row justify-content-center mb-2">
+      <div class="col">
+        <div class="px-2">
+          <div class="px-2 mx-auto" style="max-width: 50rem;">
+            <span>
+              {{ if eq .InclusionDelay 0 }}
+                A deposit has been made, and your validator will be voted into the activation queue once the deposited amount sums up to {{ formatClCurrency config.Chain.ClConfig.MaxEffectiveBalance $.Rates.ClCurrency 0 true false false false }}.
+              {{ else }}
+                The last deposit to the Deposit contract was made {{ if gt .Deposits.LastEth1DepositTs 0 }}<span aria-ethereum-date-format="FROMNOW" aria-ethereum-date="{{ .Deposits.LastEth1DepositTs }}"></span>{{ end }}, it will take <a href="https://kb.beaconcha.in/ethereum-2.0-and-depositing-process">around 16-24 hours</a> until your deposit is processed by the beacon chain. This validator will be eligible for activation once the deposited amount sums up to {{ formatClCurrency config.Chain.ClConfig.MaxEffectiveBalance $.Rates.ClCurrency 0 true false false false }}.
+              {{ end }}
               <br />
-              Join our <a href="https://discord.io/beaconchain">Discord server</a> for support, questions and suggestions.
-            {{ end }}
-          </span>
+              <br /><br />
+              Join our <a href="https://dsc.gg/beaconchain">Discord server</a> for support, questions and suggestions. <br /><br />
+              Download the <a href="https://beaconcha.in/mobile">mobile app</a> to monitor your validator.
+            </span>
+          </div>
         </div>
       </div>
     </div>
-  </div>
-  <script>
-    window.addEventListener("load", function () {
-      $("#deposits-tab").tab("show")
-    })
-  </script>
+    <script>
+      window.addEventListener("load", function () {
+        $("#deposits-tab").tab("show")
+      })
+    </script>
+  {{ end }}
 {{ end }}
 
 {{ define "validatorOverviewPending" }}
@@ -109,7 +115,7 @@
           {{ if lt .ActivationEpoch 100_000_000 }}
             It will be activated on <span class="font-weight-bolder" title="{{ .ActivationTs }}" data-toggle="tooltip" aria-ethereum-date="{{ .ActivationTs.Unix }}">{{ .ActivationTs }}</span> during epoch <span class="font-weight-bolder">{{ .ActivationEpoch }}</span>.
           {{ else if lt .EstimatedActivationEpoch 100_000_000 }}
-            It is estimated to be activated on <span class="font-weight-bolder" title="{{ .ActivationTs }}" data-toggle="tooltip" aria-ethereum-date="{{ .EstimatedActivationTs.Unix }}">{{ .EstimatedActivationTs }}</span> during epoch <span class="font-weight-bolder">{{ .EstimatedActivationEpoch }}</span>.
+            It is estimated to be activated on <span class="font-weight-bolder" title="{{ .EstimatedActivationTs }}" data-toggle="tooltip" aria-ethereum-date="{{ .EstimatedActivationTs.Unix }}">{{ .EstimatedActivationTs }}</span> during epoch <span class="font-weight-bolder">{{ .EstimatedActivationEpoch }}</span>.
           {{ end }}
           Make sure your nodes and your client is up and running <em>before</em> the countdown reaches zero.
         </div>
@@ -149,9 +155,9 @@
       <div class="m-3 position-relative" style="flex-basis: 4rem; white-space: nowrap;">
         <span style="top:-1.2rem; white-space: nowrap;" class="text-muted font-weight-lighter position-absolute"><small>Balance</small></span>
         <div class="d-flex flex-column">
-          <span style="font-weight: bold; font-size:18px;">{{ formatCurrentBalance .CurrentBalance $.Rates.Currency }}</span>
+          <span style="font-weight: bold; font-size:18px;">{{ formatClCurrency .CurrentBalance $.Rates.SelectedCurrency 5 true false false false }}</span>
           <span style="font-size: 0.8rem; color: gray"
-            >{{ formatEffectiveBalance .EffectiveBalance "ETH" }}
+            >{{ formatEffectiveBalance .EffectiveBalance config.Frontend.MainCurrency }}
             <span data-toggle="tooltip" title="The effective balance is used to calculate the base rewards of a validator"
               ><a class="no-highlight" href="https://kb.beaconcha.in/glossary#current-balance-and-effective-balance"><i class="far ml-1 fa-question-circle"></i></a></span
           ></span>
@@ -179,9 +185,9 @@
       <div class="m-3 position-relative">
         <span style="top:-1.2rem;" class="text-muted font-weight-lighter position-absolute"><small>Balance</small></span>
         <div style="width: 8.32rem" class="d-flex flex-column">
-          <span style="font-weight: bold; font-size:18px;">{{ formatCurrentBalance .CurrentBalance $.Rates.Currency }}</span>
+          <span style="font-weight: bold; font-size:18px;">{{ formatClCurrency .CurrentBalance $.Rates.SelectedCurrency 5 true false false false }}</span>
           <span
-            >{{ formatEffectiveBalance .EffectiveBalance "ETH" }}
+            >{{ formatEffectiveBalance .EffectiveBalance config.Frontend.MainCurrency }}
             <span style="font-size:0.8rem; color:gray" data-toggle="tooltip" title="The effective balance is used to calculate the base rewards of a validator"
               ><a class="no-highlight" href="https://kb.beaconcha.in/glossary#current-balance-and-effective-balance"><i class="far ml-1 fa-question-circle"></i></a></span
           ></span>
@@ -204,7 +210,12 @@
       <div class="col">
         <div class="px-2 mx-auto" style="max-width: 50rem;">
           <div class="p-2 text-justify">
-            This validator has exited the system during epoch <a href="/epoch/{{ .ExitEpoch }}">{{ .ExitEpoch }}</a> and is no longer validating. There is no need to keep the validator running anymore.
+            {{ if .FutureDutiesEpoch }}
+              This validator has exited the system during epoch <a href="/epoch/{{ .ExitEpoch }}">{{ .ExitEpoch }}</a> but has still future duties. <i class="fas fa-exclamation-circle"></i> Please keep the validator running until epoch <a href="/epoch/{{ .FutureDutiesEpoch }}">{{ .FutureDutiesEpoch }}</a>!
+            {{ else }}
+              This validator has exited the system during epoch <a href="/epoch/{{ .ExitEpoch }}">{{ .ExitEpoch }}</a> and is no longer validating. There is no need to keep the validator running anymore.
+            {{ end }}
+
             {{ if .CappellaHasHappened }}
               Funds will be withdrawable after epoch <span><a href="/epoch/{{ .WithdrawableEpoch }}">{{ .WithdrawableEpoch }}</a></span
               >.
@@ -228,10 +239,23 @@
       <span id="blockCount" style="cursor: pointer;" data-toggle="tooltip" title="Blocks (Proposed: {{ .ProposedBlocksCount }}, Missed: {{ .MissedBlocksCount }}, Orphaned: {{ .OrphanedBlocksCount }}, Scheduled: {{ .ScheduledBlocksCount }})"><i class="fas fa-cubes poin"></i> {{ .BlocksCount }}{{ if ne .BlocksCount 0 }}({{ formatPercentageColoredEmoji .UnmissedBlocksPercentage }}){{ end }}</span>
     </div>
     <div class="mx-3">
-      <span id="attestationCount" style="cursor: pointer;" data-toggle="tooltip" title="Attestation Assignments (Executed: {{ .ExecutedAttestationsCount }}, Missed: {{ .MissedAttestationsCount }}, Orphaned: {{ .OrphanedAttestationsCount }})"><i class="fas fa-file-signature"></i> {{ .AttestationsCount }}{{ if ne .AttestationsCount 0 }}({{ formatPercentageColoredEmoji .UnmissedAttestationsPercentage }}){{ end }}</span>
+      <span id="attestationCount" style="cursor: pointer;" data-toggle="tooltip" title="Attestation Assignments (Executed: {{ .ExecutedAttestationsCount }}, Missed: {{ .MissedAttestationsCount }})"><i class="fas fa-file-signature"></i> {{ .AttestationsCount }}{{ if ne .AttestationsCount 0 }}({{ formatPercentageColoredEmoji .UnmissedAttestationsPercentage }}){{ end }}</span>
     </div>
     <div class="mx-3">
-      <span id="syncCount" style="cursor: pointer;" data-toggle="tooltip" title="Sync Participations (Participated: {{ .ParticipatedSyncCount }}, Missed: {{ .MissedSyncCount }}, Orphaned: {{ .OrphanedSyncCount }}, Scheduled: {{ .ScheduledSyncCount }})"><i class="fas fa-sync poin"></i> {{ .SyncCount }}{{ if ne .SyncCount 0 }}({{ formatPercentageColoredEmoji .UnmissedSyncPercentage }}){{ end }}</span>
+      <span id="syncCount" style="cursor: pointer;" data-toggle="tooltip" title="Sync Participations (Participated: {{ .ParticipatedSyncCountSlots }}, Missed: {{ .MissedSyncCountSlots }}, Orphaned: {{ .OrphanedSyncCountSlots }}, Scheduled: {{ .ScheduledSyncCountSlots }})">
+        {{ if .ScheduledSyncCountSlots }}
+          <i class="fas fa-sync poin spin"></i>
+        {{ else }}
+          <i class="fas fa-sync poin"></i>
+        {{ end }}
+        {{ .SyncCount }}
+        {{ if .SyncCount }}
+          ({{ formatPercentageColoredEmoji .UnmissedSyncPercentage }})
+          {{ if .ScheduledSyncCountSlots }}
+            {{ .SlotsDoneInCurrentSyncCommittee }}/{{ .SlotsPerSyncCommittee }}
+          {{ end }}
+        {{ end }}
+      </span>
     </div>
     <div class="mx-3">
       <span id="slashingsCount" style="cursor: pointer;" data-toggle="tooltip" title="Other validators slashed"><i class="fas fa-user-slash"></i> {{ .SlashingsCount }}</span>
@@ -242,12 +266,16 @@
 
     {{ if .CappellaHasHappened }}
       <div class="mx-3">
-        <span id="withdrawalCount" style="cursor: pointer;" data-toggle="tooltip" {{ if .IsWithdrawableAddress }}title="Withdrawals processed for this validator"{{ else }}title="To receive payouts you need 0x01 withdrawal credentials"{{ end }}>
-          <i class="fas fa-money-bill"></i>
+        <span id="withdrawalCount" style="cursor: pointer;" data-toggle="tooltip" {{ if .IsWithdrawableAddress }}title="Withdrawals processed for this validator"{{ else }}title="To receive withdrawals, 0x01 withdrawal credentials are required. Click here for more information."{{ end }}>
           {{ if .IsWithdrawableAddress }}
-            <span> {{ .WithdrawalCount }} </span>
+            <i class="fas fa-money-bill"></i>
+            {{ .WithdrawalCount }}
           {{ else }}
-            <span><i class="text-warning fas fa-exclamation-triangle"></i></span>
+            <a href="{{ if eq config.Chain.Id 100 }}https://docs.gnosischain.com/node/management/withdrawals/#how-to-change-the-withdrawal-credential{{ else }}https://launchpad.ethereum.org/en/withdrawals{{ end }}">
+              <i class="fas fa-money-bill" style="color:var(--body-color)"></i>
+              <i class="text-warning fas fa-exclamation-triangle"></i>
+              <i class="fas fa-external-link-alt"></i>
+            </a>
           {{ end }}
         </span>
       </div>
@@ -268,22 +296,22 @@
   <script>
     window.addEventListener("load", function () {
       $("#blockCount").on("click", function () {
-        $("#blocks-tab").tab("show")
+        $("#blocks-tab").click()
       })
       $("#attestationCount").on("click", function () {
-        $("#attestations-tab").tab("show")
+        $("#attestations-tab").click()
       })
       $("#syncCount").on("click", function () {
-        $("#sync-tab").tab("show")
+        $("#sync-tab").click()
       })
       $("#slashingsCount").on("click", function () {
-        $("#slashings-tab").tab("show")
+        $("#slashings-tab").click()
       })
       $("#depositCount").on("click", function () {
-        $("#deposits-tab").tab("show")
+        $("#deposits-tab").click()
       })
       $("#withdrawalCount").on("click", function () {
-        $("#withdrawal-tab").tab("show")
+        $("#withdrawal-tab").click()
       })
     })
   </script>

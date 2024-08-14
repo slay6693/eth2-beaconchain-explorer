@@ -3,14 +3,15 @@ package exporter
 import (
 	"context"
 	"database/sql"
-	"eth2-exporter/db"
-	"eth2-exporter/metrics"
-	"eth2-exporter/types"
-	"eth2-exporter/utils"
 	"fmt"
 	"math/big"
 	"regexp"
 	"time"
+
+	"github.com/gobitfly/eth2-beaconchain-explorer/db"
+	"github.com/gobitfly/eth2-beaconchain-explorer/metrics"
+	"github.com/gobitfly/eth2-beaconchain-explorer/types"
+	"github.com/gobitfly/eth2-beaconchain-explorer/utils"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
@@ -40,7 +41,7 @@ var gethRequestEntityTooLargeRE = regexp.MustCompile("413 Request Entity Too Lar
 // If a reorg of the eth1-chain happened within these 100 blocks it will delete
 // removed deposits.
 func eth1DepositsExporter() {
-	eth1DepositContractAddress = common.HexToAddress(utils.Config.Chain.Config.DepositContractAddress)
+	eth1DepositContractAddress = common.HexToAddress(utils.Config.Chain.ClConfig.DepositContractAddress)
 	eth1DepositContractFirstBlock = utils.Config.Indexer.Eth1DepositContractFirstBlock
 
 	rpcClient, err := gethRPC.Dial(utils.Config.Eth1GethEndpoint)
@@ -88,15 +89,19 @@ func eth1DepositsExporter() {
 			fromBlock = lastFetchedBlock + 1
 		}
 		// if we are not synced to the head yet fetch missing blocks in batches of size 1000
-		if toBlock-fromBlock > eth1MaxFetch {
-			toBlock = fromBlock + 1000
+		if toBlock > fromBlock+eth1MaxFetch {
+			toBlock = fromBlock + eth1MaxFetch
 		}
 		if toBlock > blockHeight {
 			toBlock = blockHeight
 		}
 		// if we are synced to the head look at the last 100 blocks
-		if (toBlock-fromBlock < eth1LookBack) && (toBlock > eth1LookBack) {
-			fromBlock = toBlock - eth1LookBack
+		if toBlock < fromBlock+eth1LookBack {
+			if toBlock > eth1LookBack {
+				fromBlock = toBlock - eth1LookBack
+			} else {
+				fromBlock = 0
+			}
 		}
 
 		depositsToSave, err := fetchEth1Deposits(fromBlock, toBlock)
@@ -135,13 +140,15 @@ func eth1DepositsExporter() {
 		// make sure we are progressing even if there are no deposits in the last batch
 		lastFetchedBlock = toBlock
 
-		logger.WithFields(logrus.Fields{
-			"duration":      time.Since(t0),
-			"blockHeight":   blockHeight,
-			"fromBlock":     fromBlock,
-			"toBlock":       toBlock,
-			"depositsSaved": len(depositsToSave),
-		}).Info("exported eth1-deposits")
+		if len(depositsToSave) > 0 {
+			logger.WithFields(logrus.Fields{
+				"duration":      time.Since(t0),
+				"blockHeight":   blockHeight,
+				"fromBlock":     fromBlock,
+				"toBlock":       toBlock,
+				"depositsSaved": len(depositsToSave),
+			}).Info("exported eth1-deposits")
+		}
 
 		// progress faster if we are not synced to head yet
 		if blockHeight != toBlock {
@@ -149,20 +156,21 @@ func eth1DepositsExporter() {
 			continue
 		}
 
-		time.Sleep(time.Second * 60)
+		time.Sleep(time.Minute)
 	}
 }
 
 func fetchEth1Deposits(fromBlock, toBlock uint64) (depositsToSave []*types.Eth1Deposit, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
-
+	topic := common.BytesToHash(eth1DepositEventSignature[:])
 	qry := ethereum.FilterQuery{
 		Addresses: []common.Address{
 			eth1DepositContractAddress,
 		},
 		FromBlock: new(big.Int).SetUint64(fromBlock),
 		ToBlock:   new(big.Int).SetUint64(toBlock),
+		Topics:    [][]common.Hash{{topic}},
 	}
 
 	depositLogs, err := eth1Client.FilterLogs(ctx, qry)
@@ -232,7 +240,7 @@ func fetchEth1Deposits(fromBlock, toBlock uint64) (depositsToSave []*types.Eth1D
 		if chainID == nil {
 			return depositsToSave, fmt.Errorf("error getting tx-chainId for eth1-deposit")
 		}
-		signer := gethTypes.NewLondonSigner(chainID)
+		signer := gethTypes.NewCancunSigner(chainID)
 		sender, err := signer.Sender(tx)
 		if err != nil {
 			return depositsToSave, fmt.Errorf("error getting sender for eth1-deposit (txHash: %x, chainID: %v): %w", d.TxHash, chainID, err)
@@ -258,6 +266,7 @@ func saveEth1Deposits(depositsToSave []*types.Eth1Deposit) error {
 			block_number,
 			block_ts,
 			from_address,
+			from_address_text,
 			publickey,
 			withdrawal_credentials,
 			amount,
@@ -266,13 +275,14 @@ func saveEth1Deposits(depositsToSave []*types.Eth1Deposit) error {
 			removed,
 			valid_signature
 		)
-		VALUES ($1, $2, $3, $4, TO_TIMESTAMP($5), $6, $7, $8, $9, $10, $11, $12, $13)
-		ON CONFLICT (tx_hash, merkletree_index) DO UPDATE SET
+		VALUES ($1, $2, $3, $4, TO_TIMESTAMP($5), $6, ENCODE($7, 'hex'), $8, $9, $10, $11, $12, $13, $14)
+		ON CONFLICT (merkletree_index) DO UPDATE SET
 			tx_input               = EXCLUDED.tx_input,
 			tx_index               = EXCLUDED.tx_index,
 			block_number           = EXCLUDED.block_number,
 			block_ts               = EXCLUDED.block_ts,
 			from_address           = EXCLUDED.from_address,
+			from_address_text      = EXCLUDED.from_address_text,
 			publickey              = EXCLUDED.publickey,
 			withdrawal_credentials = EXCLUDED.withdrawal_credentials,
 			amount                 = EXCLUDED.amount,
@@ -286,7 +296,7 @@ func saveEth1Deposits(depositsToSave []*types.Eth1Deposit) error {
 	defer insertDepositStmt.Close()
 
 	for _, d := range depositsToSave {
-		_, err := insertDepositStmt.Exec(d.TxHash, d.TxInput, d.TxIndex, d.BlockNumber, d.BlockTs, d.FromAddress, d.PublicKey, d.WithdrawalCredentials, d.Amount, d.Signature, d.MerkletreeIndex, d.Removed, d.ValidSignature)
+		_, err := insertDepositStmt.Exec(d.TxHash, d.TxInput, d.TxIndex, d.BlockNumber, d.BlockTs, d.FromAddress, d.FromAddress, d.PublicKey, d.WithdrawalCredentials, d.Amount, d.Signature, d.MerkletreeIndex, d.Removed, d.ValidSignature)
 		if err != nil {
 			return fmt.Errorf("error saving eth1-deposit to db: %v: %w", fmt.Sprintf("%x", d.TxHash), err)
 		}
